@@ -1,7 +1,7 @@
 <resources>
-    <style name="Theme.Mawjiz" parent="Theme.AppCompat.NoActionBar">
-        <item name="android:statusBarColor">@color/paper</item>
-        <item name="android:navigationBarColor">@color/paper</item>
-        <item name="android:windowBackground">@color/paper</item>
+    <style name="Theme.Mawjiz" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#10141B</item>
+        <item name="android:navigationBarColor">#10141B</item>
+        <item name="android:windowBackground">#10141B</item>
     </style>
 </resources>
