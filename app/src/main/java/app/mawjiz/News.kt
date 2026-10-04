@@ -97,9 +97,44 @@ fun normalize(input: String): String = buildString {
     }
 }.lowercase().replace(Regex("[^\\u0600-\\u06FF0-9 ]"), " ").replace(Regex("\\s+"), " ").trim()
 
+private val events = listOf(
+    "اعلن", "اعلنت", "قرر", "قررت", "فرض", "اغلق", "قصف", "قتل", "اتفق", "وقع", "اصدر",
+    "انسحب", "استهدف", "سيطر", "اعتقل", "هاجم", "انفجر", "ارتفع", "انخفض", "رفض", "وافق",
+    "عين", "اقال", "مدد", "اصاب", "دمر", "حظر", "شنت", "اوقف", "استقال", "انتخب",
+    "خفض", "رفع", "بلغ", "سجل", "ثبت", "قصفت", "دمرت", "اغتيل", "اجتاحت", "احتلت",
+).map(::normalize)
+
+private val politicsWords = listOf("عقوبات", "قمه", "مجلس الامن", "اتفاق", "قرار", "امم متحده").map(::normalize)
+private val economyWords = listOf("تضخم", "فائده", "بنك مركزي", "ميزانيه", "ركود", "رسوم").map(::normalize)
+
+fun decodeFeed(input: String): String {
+    var text = input.replace(Regex("<[^>]+>"), " ")
+    text = text.replace(Regex("&#x([0-9a-fA-F]+);")) { mark ->
+        val code = mark.groupValues[1].toIntOrNull(16) ?: return@replace " "
+        entityChar(code)
+    }
+    text = text.replace(Regex("&#(\\d+);")) { mark ->
+        val code = mark.groupValues[1].toIntOrNull() ?: return@replace " "
+        entityChar(code)
+    }
+    return text
+        .replace("\u0026nbsp;", " ", ignoreCase = true)
+        .replace("\u0026amp;", " ", ignoreCase = true)
+        .replace("\u0026quot;", " ", ignoreCase = true)
+        .replace("\u0026apos;", " ", ignoreCase = true)
+        .replace("\u0026lt;", " ", ignoreCase = true)
+        .replace("\u0026gt;", " ", ignoreCase = true)
+}
+
+private fun entityChar(code: Int): String = when (code) {
+    160, 8203, 8239, 8230, 39, 34, 8216, 8217, 8220, 8221 -> " "
+    8211, 8212 -> " "
+    in 48..57 -> code.toChar().toString()
+    else -> if (code in 0x0600..0x06FF) code.toChar().toString() else " "
+}
+
 fun arabicProse(input: String): String {
-    val stripped = input
-        .replace(Regex("<[^>]+>"), " ")
+    val stripped = decodeFeed(input)
         .replace(Regex("https?://\\S+|www\\.\\S+"), " ")
         .replace(Regex("[A-Za-z]+"), " ")
     val kept = buildString {
@@ -111,31 +146,41 @@ fun arabicProse(input: String): String {
         }
     }
     return kept
+        .replace(Regex("(?<![0-9])(\\d{3,4})(?![0-9٪%])")) { mark ->
+            val value = mark.groupValues[1].toIntOrNull() ?: return@replace " "
+            if (value in 1900..2035) mark.value else " "
+        }
+        .replace(Regex("(\\d+)(\\s+\\1)+"), "$1")
+        .replace(Regex("([.،؛:؟!])\\1+"), "$1")
         .replace(Regex("\\s+"), " ")
         .replace(Regex("\\s+([.،؛:؟!])"), "$1")
         .trim()
-        .trim('.', '،', '؛', ':', '(', ')', '-', '–', '—')
+        .trim('.', '،', '؛', ':', '(', ')', '-', '–', '—', '%', '٪')
 }
 
 fun readable(title: String, body: String): String {
-    val text = arabicProse("$title. $body")
-    val parts = text.split(Regex("(?<=[.؟!])\\s+")).map { it.trim() }.filter { it.length >= 12 }
-    val kept = parts.filter { sentence ->
-        val head = sentence.trim('؟', '?', ' ')
-        !sentence.contains('؟') && !head.startsWith("هل ") && !head.startsWith("ماذا") && !head.startsWith("لماذا")
-    }
-    return (if (kept.isNotEmpty()) kept else parts).take(3).joinToString(" ").trim()
+    val head = arabicProse(title)
+    val extra = arabicProse(body)
+        .split(Regex("(?<=[.؟!])\\s+"))
+        .map { it.trim() }
+        .firstOrNull { sentence ->
+            sentence.length in 28..180 &&
+                !sentence.contains('؟') &&
+                !normalize(sentence).startsWith(normalize(head).take(14))
+        }
+        .orEmpty()
+    return if (extra.isBlank() || extra == head) head else "$head. $extra"
 }
 
 fun isNewsworthy(input: String): Boolean {
     val text = normalize(input)
-    if (text.length < 18) return false
-    val hardHit = hard.any { text.contains(it) }
-    if (text.length < 24 && !hardHit) return false
+    if (text.length < 28) return false
     if (alwaysDrop.any { text.contains(it) }) return false
+    val hardHit = hard.any { text.contains(it) } || events.any { text.contains(it) }
     if (softDrop.any { text.contains(it) } && !hardHit) return false
-    val words = text.split(" ").filter { it.isNotBlank() }
-    return words.size >= 6 || hardHit
+    if (!hardHit) return false
+    val words = text.split(" ").filter { it.length >= 2 }
+    return words.size >= 6
 }
 
 fun matchDesks(text: String, enabled: Map<String, Boolean>): List<String> {
@@ -157,9 +202,10 @@ fun matchDesks(text: String, enabled: Map<String, Boolean>): List<String> {
         saw = true
         if (enabled[desk.id] == true) found.add(desk.id)
     }
-    if (found.isNotEmpty()) return found.take(3)
+    if (found.isNotEmpty()) return found.take(2)
     if (saw) return emptyList()
-    if (enabled["politics"] == true) return listOf("politics")
+    if (enabled["economy"] == true && economyWords.any { norm.contains(it) }) return listOf("economy")
+    if (enabled["politics"] == true && politicsWords.any { norm.contains(it) }) return listOf("politics")
     return emptyList()
 }
 

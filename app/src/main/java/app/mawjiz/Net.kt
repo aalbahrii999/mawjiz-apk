@@ -53,9 +53,12 @@ class Net {
         val payload = JSONArray()
         batch.forEach { payload.put(JSONObject().put("id", it.id).put("text", it.text.take(700))) }
         val prompt = listOf(
-            "اكتب كل خبر بالعربية الواضحة. جملتان: من فعل، ماذا حدث، أين، والنتيجة.",
-            "أبقِ الأرقام والنسب كما وردت. لا تخترع رقمًا. لا تحذف اسم مكان.",
-            "جولة صحف أو رأي أو معرض أو مشاهير: keep=false.",
+            "أنت محرر نشرة. لا يمر إلا خبر وقع فعلًا وله فاعل ومكان ونتيجة.",
+            "إن كان العنوان سؤالًا أو رأيًا أو جولة صحف أو زيارة أو معرضًا أو بلا حدث واضح: keep=false.",
+            "إن لم تفهم ماذا تغير على الأرض: keep=false. لا تلخص الغامض.",
+            "جملتان فقط. من فعل، ماذا حدث، أين، وما النتيجة.",
+            "ممنوع إدخال اسم الوكالة أو رموز أو أكواد أو أرقام مكررة.",
+            "لا رقم إلا إذا كان في النص الأصلي عددًا أو سعرًا أو نسبة.",
             "أعد JSON فقط: {\"items\":[{\"id\":\"\",\"text\":\"\",\"keep\":true}]}",
             payload.toString(),
         ).joinToString("\n")
@@ -66,7 +69,8 @@ class Net {
             val row = byId[story.id] ?: return@mapNotNull story
             if (!row.second) return@mapNotNull null
             val text = arabicProse(row.third)
-            if (!isNewsworthy(text)) story else story.copy(text = text)
+            if (!isNewsworthy(text)) return@mapNotNull null
+            story.copy(text = text)
         }
     }
 
