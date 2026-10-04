@@ -17,7 +17,7 @@ object Catalog {
         Desk("syria", "سوريا", 0xFFC4A15A, listOf("سوريا", "دمشق")),
         Desk("iraq", "العراق", 0xFF8C7E6A, listOf("العراق", "بغداد")),
         Desk("redsea", "البحر الأحمر", 0xFF3E8E9A, listOf("البحر الاحمر", "باب المندب", "المندب")),
-        Desk("saudi", "السعودية", 0xFF3E9A62, listOf("السعود", "الرياض", "ارامكو", "جده", "مكه")),
+        Desk("saudi", "السعودية", 0xFF3E9A62, listOf("السعود", "ارامكو", "جده", "مكه", "المملكه")),
         Desk("gulf", "الخليج", 0xFF4C8D7A, listOf("خليج", "الامارات", "قطر", "الكويت", "البحرين", "عمان")),
         Desk("oil", "النفط", 0xFFC9842A, listOf("نفط", "اوبك", "برميل", "غاز")),
         Desk("politics", "سياسة", 0xFF8E9AA8, emptyList()),
@@ -56,7 +56,7 @@ object Catalog {
         Outlet("okaz", "عكاظ", "local", "عكاظ"),
         Outlet("sabq", "سبق", "local", "سبق"),
         Outlet("aleqt", "الاقتصادية", "local", "الاقتصادية"),
-        Outlet("alriyadh", "الرياض", "local", "جريدة الرياض"),
+        Outlet("alriyadh", "الرياض", "local", "صحيفة الرياض"),
         Outlet("arabnews", "عرب نيوز", "local", "عرب نيوز"),
         Outlet("aljazeera", "الجزيرة", "arab", "الجزيرة", "https://www.aljazeera.net/aljazeerarss"),
         Outlet("alarabiya", "العربية", "arab", "العربية"),
@@ -76,7 +76,7 @@ object Catalog {
 }
 
 private val marks = setOf('.', '،', '؛', ':', '؟', '!', '«', '»', '"', '\'', '(', ')', '-', '–', '—', '%', '٪')
-private val alwaysDrop = listOf("اهتمامات الصحف", "تصدرت اهتمام", "جولة الصحافة", "عناوين الصحف", "مانشيت", "خطايا", "اخطاء الغرب", "افتتاحيه", "اللعب بالنار", "مقال راي", "دوار الحركة", "غثيان", "مشاهير").map(::normalize)
+private val alwaysDrop = listOf("اهتمامات الصحف", "تصدرت اهتمام", "جولة الصحافة", "عناوين الصحف", "مانشيت", "خطايا", "اخطاء الغرب", "افتتاحيه", "اللعب بالنار", "مقال راي", "دوار الحركة", "غثيان", "مشاهير", "ماذا يعني").map(::normalize)
 private val softDrop = listOf("يتفقد", "تفقد", "يرعي", "يكرم", "معرض", "مهرجان", "جناح", "صقور", "مبادرة", "تعزيز الوعي").map(::normalize)
 private val hard = listOf("قصف", "حرب", "غاره", "صاروخ", "عقوبات", "قتل", "اشتباك", "هدنه", "هرمز", "نفط", "اوبك", "اعتقال", "هجوم", "اتفاق", "انفجار", "سيطر", "استهدف", "اعلن", "اصدر", "فرض", "اغلق", "انسحب", "غزو", "اسقاط", "وقع", "يعلن").map(::normalize)
 private val softTopics = listOf(
@@ -106,6 +106,37 @@ private val events = listOf(
 
 private val politicsWords = listOf("عقوبات", "قمه", "مجلس الامن", "اتفاق", "قرار", "امم متحده").map(::normalize)
 private val economyWords = listOf("تضخم", "فائده", "بنك مركزي", "ميزانيه", "ركود", "رسوم").map(::normalize)
+private val cueWords = listOf("جريدة", "صحيفة", "وكالة", "نشرت", "نقلت", "ذكرت", "أفادت", "حسب", "وفق")
+private val bareAgencies = listOf(
+    "رويترز", "فرانس برس", "أسوشيتد برس", "بي بي سي", "عكاظ", "سبق", "الأناضول",
+    "فرانس 24", "دويتشه فيله", "يورونيوز", "إندبندنت عربية", "سكاي نيوز عربية",
+    "القدس العربي", "عرب نيوز", "وكالة الأنباء السعودية",
+)
+private val riyadhCityForms = listOf(
+    "أعلنت الرياض", "أعلن الرياض", "قررت الرياض", "قرر الرياض", "أصدرت الرياض", "أصدر الرياض",
+    "في الرياض", "من الرياض", "إلى الرياض", "بمدينة الرياض",
+).map(::normalize)
+
+fun stripMasthead(input: String, outlet: String = ""): String {
+    var text = arabicProse(input)
+    val names = Catalog.outlets.flatMap { listOf(it.label, it.query) }.plus(outlet).filter { it.isNotBlank() }.distinct()
+    val phrases = mutableListOf<String>()
+    for (name in names) {
+        for (cue in cueWords) phrases += "$cue $name"
+        if (' ' in name && name != "الشرق الأوسط") phrases += name
+    }
+    phrases += bareAgencies
+    for (phrase in phrases.distinct().sortedByDescending { it.length }) {
+        if (phrase.length < 3 || phrase == "الرياض") continue
+        text = text.replace(phrase, " ")
+    }
+    return arabicProse(text)
+}
+
+private fun riyadhIsCity(norm: String): Boolean {
+    if (norm.contains("نادي الرياض")) return false
+    return riyadhCityForms.any { norm.contains(it) }
+}
 
 fun decodeFeed(input: String): String {
     var text = input.replace(Regex("<[^>]+>"), " ")
@@ -155,7 +186,7 @@ fun arabicProse(input: String): String {
         .replace(Regex("\\s+"), " ")
         .replace(Regex("\\s+([.،؛:؟!])"), "$1")
         .trim()
-        .trim('.', '،', '؛', ':', '(', ')', '-', '–', '—', '%', '٪')
+        .trim('.', '،', '؛', ':', '(', ')', '-', '–', '—')
 }
 
 fun readable(title: String, body: String): String {
@@ -173,8 +204,11 @@ fun readable(title: String, body: String): String {
 }
 
 fun isNewsworthy(input: String): Boolean {
-    val text = normalize(input)
+    val shown = input.trim()
+    if (shown.contains('؟') || shown.contains('?')) return false
+    val text = normalize(shown)
     if (text.length < 28) return false
+    if (text.startsWith("هل ") || text.startsWith("ماذا") || text.startsWith("لماذا") || text.startsWith("كيف ")) return false
     if (alwaysDrop.any { text.contains(it) }) return false
     val hardHit = hard.any { text.contains(it) } || events.any { text.contains(it) }
     if (softDrop.any { text.contains(it) } && !hardHit) return false
@@ -183,30 +217,45 @@ fun isNewsworthy(input: String): Boolean {
     return words.size >= 6
 }
 
-fun matchDesks(text: String, enabled: Map<String, Boolean>): List<String> {
-    val norm = normalize(text)
+fun matchDesks(text: String, enabled: Map<String, Boolean>, outlet: String = ""): List<String> {
+    val norm = normalize(stripMasthead(text, outlet))
     for ((id, words) in softTopics) {
         if (words.none { norm.contains(normalize(it)) }) continue
         if (enabled[id] != true) return emptyList()
-        val found = mutableListOf(id)
-        for (desk in Catalog.desks) {
-            if (desk.words.isEmpty() || enabled[desk.id] != true || desk.id == id) continue
-            if (desk.words.any { norm.contains(it) }) found.add(desk.id)
-        }
-        return found.distinct().take(3)
+        return listOf(id)
     }
-    val found = mutableListOf<String>()
-    var saw = false
+    val hits = mutableListOf<Pair<Int, String>>()
+    var blocked = false
     for (desk in Catalog.desks) {
-        if (desk.words.isEmpty() || desk.words.none { norm.contains(it) }) continue
-        saw = true
-        if (enabled[desk.id] == true) found.add(desk.id)
+        val index = desk.words.map { norm.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: continue
+        if (enabled[desk.id] == true) hits += index to desk.id else blocked = true
     }
-    if (found.isNotEmpty()) return found.take(2)
-    if (saw) return emptyList()
+    if (riyadhIsCity(norm)) {
+        if (enabled["saudi"] == true) hits += norm.indexOf("الرياض") to "saudi" else blocked = true
+    }
+    val places = hits.sortedBy { it.first }.map { it.second }.distinct()
+    if (places.isNotEmpty()) return places.take(2)
+    if (blocked) return emptyList()
     if (enabled["economy"] == true && economyWords.any { norm.contains(it) }) return listOf("economy")
     if (enabled["politics"] == true && politicsWords.any { norm.contains(it) }) return listOf("politics")
     return emptyList()
+}
+
+fun classify(title: String, body: String, outlet: String, enabled: Map<String, Boolean>): Pair<String, List<String>>? {
+    val text = stripMasthead(readable(title, body), outlet)
+    if (!isNewsworthy(text)) return null
+    val desks = matchDesks(text, enabled, outlet)
+    if (desks.isEmpty()) return null
+    return text to desks
+}
+
+fun retag(story: Story, enabled: Map<String, Boolean>): Story? {
+    val outlet = story.sources.firstOrNull()?.outlet.orEmpty()
+    val text = stripMasthead(story.text, outlet)
+    if (!isNewsworthy(text)) return null
+    val desks = matchDesks(text, enabled, outlet)
+    if (desks.isEmpty()) return null
+    return story.copy(text = text, desks = desks)
 }
 
 fun storyId(url: String): String {
@@ -220,8 +269,9 @@ fun sameStory(left: Story, right: Story): Boolean {
     if (left.id == right.id) return true
     val urls = left.sources.map { it.url }.toSet()
     if (right.sources.any { it.url in urls }) return true
+    if (left.desks.firstOrNull() != null && right.desks.firstOrNull() != null && left.desks.first() != right.desks.first()) return false
     val shared = tokens(left.text).intersect(tokens(right.text)).size
-    return shared >= 3
+    return shared >= 4
 }
 
 fun mergeStories(existing: List<Story>, incoming: List<Story>, now: Long): List<Story> {

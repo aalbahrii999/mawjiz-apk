@@ -11,8 +11,8 @@ android {
         applicationId = "app.mawjiz"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "4.1.0"
+        versionCode = 6
+        versionName = "5.0.0"
     }
     buildTypes {
         release {
@@ -38,4 +38,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
 }

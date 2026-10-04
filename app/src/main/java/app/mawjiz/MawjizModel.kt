@@ -31,7 +31,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     var size by mutableStateOf("md")
     var theme by mutableStateOf("dark")
     var note by mutableStateOf("")
-    var settingsOpen by mutableStateOf(false)
+    var page by mutableStateOf("")
 
     init {
         load()
@@ -47,13 +47,26 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val incoming = withContext(Dispatchers.IO) {
                 val fresh = net.gather(desks, chosen)
-                net.rewrite(key, modelName, fresh)
+                val written = net.rewrite(key, modelName, fresh, desks)
+                written.mapNotNull { retag(it, desks) }
             }
-            stories = mergeStories(stories, incoming, System.currentTimeMillis())
+            stories = mergeStories(stories, incoming, System.currentTimeMillis()).mapNotNull { retag(it, desks) }
             save()
             loading = false
             if (incoming.isEmpty() && stories.isEmpty()) note = "ما وصلت مادة جديدة."
         }
+    }
+
+    fun openSettings() {
+        page = "home"
+    }
+
+    fun backSettings() {
+        page = if (page == "home") "" else "home"
+    }
+
+    fun openPage(id: String) {
+        page = id
     }
 
     fun toggleFilter(id: String) {
@@ -159,7 +172,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                 }
                 loaded += Story(row.optString("id"), row.optString("text"), row.optJSONArray("desks").strings(), row.optLong("at"), links)
             }
-            stories = mergeStories(emptyList(), loaded, System.currentTimeMillis())
+            stories = mergeStories(emptyList(), loaded, System.currentTimeMillis()).mapNotNull { retag(it, enabled) }
         } catch (_: Exception) {
             note = ""
         }

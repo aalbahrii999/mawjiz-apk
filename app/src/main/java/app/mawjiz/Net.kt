@@ -20,45 +20,45 @@ class Net {
     fun gather(enabled: Map<String, Boolean>, sources: List<String>): List<Story> {
         val jobs = mutableListOf<Pair<String, String>>()
         for (outlet in Catalog.outlets) {
-            if (outlet.id !in sources) continue
-            if (outlet.feed != null) jobs += outlet.feed to outlet.label
-            val url = "https://news.google.com/rss/search?q=" +
-                URLEncoder.encode(outlet.query, "UTF-8") + "&hl=ar&gl=SA&ceid=SA:ar"
-            jobs += url to outlet.label
+            if (outlet.id !in sources || outlet.feed == null) continue
+            jobs += outlet.feed to outlet.label
         }
         for ((id, query) in Catalog.queries) {
             if (enabled[id] != true) continue
-            val url = "https://news.google.com/rss/search?q=" +
-                URLEncoder.encode(query, "UTF-8") + "&hl=ar&gl=SA&ceid=SA:ar"
-            jobs += url to (Catalog.desk(id)?.label ?: "")
+            jobs += google(query) to ""
+        }
+        for (outlet in Catalog.outlets) {
+            if (outlet.id !in sources || outlet.feed != null) continue
+            if (outlet.group != "global" && outlet.id != "spa") continue
+            jobs += google(outlet.query) to outlet.label
+        }
+        for (outlet in Catalog.outlets) {
+            if (outlet.id !in sources || outlet.feed != null) continue
+            if (outlet.group == "global" || outlet.id == "spa") continue
+            jobs += google(outlet.query) to outlet.label
         }
         val stories = mutableListOf<Story>()
-        for (job in jobs.distinctBy { it.first }.take(16)) {
+        for (job in jobs.distinctBy { it.first }.take(12)) {
             val xml = get(job.first) ?: continue
             for (item in parse(xml, job.second)) {
-                val text = readable(item.title, item.body)
-                if (!isNewsworthy(text)) continue
-                val desks = matchDesks(text, enabled)
-                if (desks.isEmpty()) continue
-                val story = Story(storyId(item.url), text, desks, item.at, listOf(Source(item.outlet, item.url)))
+                val classed = classify(item.title, item.body, item.outlet, enabled) ?: continue
+                val story = Story(storyId(item.url), classed.first, classed.second, item.at, listOf(Source(item.outlet, item.url)))
                 if (stories.none { sameStory(it, story) }) stories += story
             }
         }
         return stories.sortedByDescending { it.at }
     }
 
-    fun rewrite(key: String, model: String, items: List<Story>): List<Story> {
+    fun rewrite(key: String, model: String, items: List<Story>, enabled: Map<String, Boolean>): List<Story> {
         if (key.isBlank() || items.isEmpty()) return items
         val batch = items.take(6)
         val payload = JSONArray()
         batch.forEach { payload.put(JSONObject().put("id", it.id).put("text", it.text.take(700))) }
         val prompt = listOf(
-            "أنت محرر نشرة. لا يمر إلا خبر وقع فعلًا وله فاعل ومكان ونتيجة.",
-            "إن كان العنوان سؤالًا أو رأيًا أو جولة صحف أو زيارة أو معرضًا أو بلا حدث واضح: keep=false.",
-            "إن لم تفهم ماذا تغير على الأرض: keep=false. لا تلخص الغامض.",
-            "جملتان فقط. من فعل، ماذا حدث، أين، وما النتيجة.",
-            "ممنوع إدخال اسم الوكالة أو رموز أو أكواد أو أرقام مكررة.",
-            "لا رقم إلا إذا كان في النص الأصلي عددًا أو سعرًا أو نسبة.",
+            "أنت محرر. اختصر كل خبر في جملتين: من فعل، ماذا حدث، وأين.",
+            "لا تغيّر البلد، ولا تضف بلدًا لم يرد في النص، ولا تعامل اسم الجريدة كأنه مدينة.",
+            "لا تخترع رقمًا. لا تكتب اسم الوكالة داخل الخبر. لا رموز ولا أكواد.",
+            "سؤال أو رأي أو جولة صحف أو خبر بلا فاعل وفعل ونتيجة: keep=false.",
             "أعد JSON فقط: {\"items\":[{\"id\":\"\",\"text\":\"\",\"keep\":true}]}",
             payload.toString(),
         ).joinToString("\n")
@@ -68,9 +68,12 @@ class Net {
         return items.mapNotNull { story ->
             val row = byId[story.id] ?: return@mapNotNull story
             if (!row.second) return@mapNotNull null
-            val text = arabicProse(row.third)
-            if (!isNewsworthy(text)) return@mapNotNull null
-            story.copy(text = text)
+            val outlet = story.sources.firstOrNull()?.outlet.orEmpty()
+            val text = stripMasthead(arabicProse(row.third), outlet)
+            if (!isNewsworthy(text)) return@mapNotNull story
+            val desks = matchDesks(text, enabled, outlet)
+            if (desks.isEmpty() || story.desks.none { it in desks }) return@mapNotNull story
+            story.copy(text = text, desks = desks)
         }
     }
 
@@ -124,7 +127,7 @@ class Net {
 
     private fun get(url: String): String? {
         if (!url.startsWith("https://")) return null
-        val request = Request.Builder().url(url).header("user-agent", "Mawjiz/4.0").build()
+        val request = Request.Builder().url(url).header("user-agent", "Mawjiz/5.0").build()
         return try {
             http.newCall(request).execute().use { if (it.isSuccessful) it.body?.string() else null }
         } catch (_: Exception) {
@@ -157,6 +160,11 @@ class Net {
     private fun attr(block: String): String {
         return Regex("<link[^>]*href=\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(block)?.groupValues?.get(1).orEmpty()
     }
+}
+
+private fun google(query: String): String {
+    return "https://news.google.com/rss/search?q=" +
+        URLEncoder.encode(query, "UTF-8") + "&hl=ar&gl=SA&ceid=SA:ar"
 }
 
 private fun splitOutlet(title: String, fallback: String): Pair<String, String> {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -89,7 +90,16 @@ fun MawjizApp(model: MawjizModel = viewModel()) {
     val colors = paint(model.theme)
     val font = face(model.font)
     val body = when (model.size) { "sm" -> 15.sp; "lg" -> 20.sp; else -> 17.sp }
-    if (model.settingsOpen) SettingsScreen(model, colors, font) else TimelineScreen(model, colors, font, body)
+    BackHandler(enabled = model.page.isNotEmpty()) { model.backSettings() }
+    when (model.page) {
+        "" -> TimelineScreen(model, colors, font, body)
+        "home" -> SettingsHome(model, colors, font)
+        "desks" -> DeskSettings(model, colors, font)
+        "sources" -> SourceSettings(model, colors, font)
+        "edition" -> EditionSettings(model, colors, font)
+        "look" -> LookSettings(model, colors, font)
+        else -> SummarySettings(model, colors, font)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,7 +119,7 @@ private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("موجز", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
-                TextButton(onClick = { model.settingsOpen = true }) { Text("الإعدادات", color = colors.muted, fontFamily = font) }
+                TextButton(onClick = { model.openSettings() }) { Text("الإعدادات", color = colors.muted, fontFamily = font) }
             }
             ChipRow(chips, model.selected, colors, font, model::toggleFilter, model::showAll, model::moveDesk)
             if (model.note.isNotBlank()) {
@@ -256,86 +266,171 @@ private fun StoryRow(story: Story, colors: Paint, font: FontFamily, body: TextUn
 }
 
 @Composable
-private fun SettingsScreen(model: MawjizModel, colors: Paint, font: FontFamily) {
-    var draftKey by remember { mutableStateOf(model.key) }
-    var draftModel by remember { mutableStateOf(model.modelName) }
-    var draftMorning by remember { mutableStateOf(model.morning) }
-    var draftEvening by remember { mutableStateOf(model.evening) }
-    val fields = OutlinedTextFieldDefaults.colors(
-        focusedTextColor = colors.ink, unfocusedTextColor = colors.ink,
-        focusedBorderColor = Teal, unfocusedBorderColor = colors.line,
-        cursorColor = colors.ink, focusedLabelColor = colors.muted, unfocusedLabelColor = colors.muted,
-    )
+private fun SettingsHome(model: MawjizModel, colors: Paint, font: FontFamily) {
+    val desksOn = model.enabled.values.count { it }
+    val look = when (model.theme) { "light" -> "فاتح"; else -> "داكن" }
+    val key = if (model.key.isBlank()) "بلا مفتاح" else "المفتاح محفوظ"
+    Scaffold(containerColor = colors.paper) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            TextButton(onClick = { model.backSettings() }) { Text("رجوع", color = colors.muted, fontFamily = font) }
+            Text("الإعدادات", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
+            Spacer(Modifier.height(8.dp))
+            MenuRow("التصنيفات", "$desksOn ظاهرة", colors, font) { model.openPage("desks") }
+            MenuRow("المصادر", "${model.sources.size} وكالة", colors, font) { model.openPage("sources") }
+            MenuRow("النشرة", "${model.morning} · ${model.evening}", colors, font) { model.openPage("edition") }
+            MenuRow("المظهر", look, colors, font) { model.openPage("look") }
+            MenuRow("التلخيص", key, colors, font) { model.openPage("summary") }
+        }
+    }
+}
+
+@Composable
+private fun DeskSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
+    var open by remember { mutableStateOf(setOf(Catalog.groups.first().title)) }
     Scaffold(containerColor = colors.paper) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
-            item {
-                TextButton(onClick = { model.settingsOpen = false }) { Text("رجوع", color = colors.muted, fontFamily = font) }
-                Text("الإعدادات", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
-                Section("التصنيفات", colors, font)
-            }
+            item { SubHead("التصنيفات", colors, font) { model.backSettings() } }
             Catalog.groups.forEach { group ->
-                item { Text(group.title, color = colors.muted, fontSize = 12.sp, fontFamily = font, modifier = Modifier.padding(top = 8.dp)) }
-                items(group.ids, key = { "desk-$it" }) { id ->
-                    val desk = Catalog.desk(id) ?: return@items
-                    Check(desk.label, model.enabled[id] == true, colors, font, Color(desk.color.toInt())) { model.setDesk(id, it) }
-                }
-            }
-            item { Section("المصادر", colors, font) }
-            Catalog.outletGroups.forEach { (group, title) ->
-                val outlets = Catalog.outlets.filter { it.group == group }
-                item { Text(title, color = colors.muted, fontSize = 12.sp, fontFamily = font, modifier = Modifier.padding(top = 8.dp)) }
-                items(outlets, key = { it.id }) { outlet ->
-                    Check(outlet.label, outlet.id in model.sources, colors, font) { model.setSource(outlet.id, it) }
-                }
-            }
-            item {
-                Section("النشرة", colors, font)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(draftMorning, { draftMorning = it }, label = { Text("الصباح") }, modifier = Modifier.weight(1f), colors = fields, singleLine = true)
-                    OutlinedTextField(draftEvening, { draftEvening = it }, label = { Text("المساء") }, modifier = Modifier.weight(1f), colors = fields, singleLine = true)
-                }
-                Section("المظهر", colors, font)
-                Text("الخط", color = colors.muted, fontSize = 12.sp, fontFamily = font)
-            }
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("cairo" to "القاهرة", "naskh" to "نسخ", "plex" to "بليكس").forEach { (id, label) ->
-                        val on = model.font == id
-                        Text(
-                            label,
-                            color = if (on) colors.paper else colors.ink,
-                            fontFamily = face(id),
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(if (on) colors.ink else colors.sheet).clickable { model.setLook(nextFont = id) }.padding(horizontal = 14.dp, vertical = 10.dp),
-                        )
+                item {
+                    MenuRow(group.title, "${group.ids.count { model.enabled[it] == true }} / ${group.ids.size}", colors, font) {
+                        open = if (group.title in open) open - group.title else open + group.title
                     }
                 }
-                Choice("الحجم", listOf("sm" to "صغير", "md" to "وسط", "lg" to "كبير"), model.size, colors, font) { model.setLook(nextSize = it) }
-                Choice("اللون", listOf("dark" to "داكن", "light" to "فاتح"), model.theme, colors, font) { model.setLook(nextTheme = it) }
-                Section("التلخيص", colors, font)
-                OutlinedTextField(draftKey, { draftKey = it }, label = { Text("مفتاح Gemini") }, modifier = Modifier.fillMaxWidth(), colors = fields, singleLine = true)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(draftModel, { draftModel = it }, label = { Text("النموذج") }, modifier = Modifier.fillMaxWidth(), colors = fields, singleLine = true)
-                TextButton(onClick = { model.testKey(draftKey, draftModel) }) { Text("اختبار المفتاح", color = colors.ink, fontFamily = font) }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { model.savePrefs(draftKey, draftModel, draftMorning, draftEvening) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Color(0xFFF4EFE6)),
-                ) { Text("حفظ", fontFamily = font) }
-                if (model.note.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(model.note, color = colors.muted, fontSize = 13.sp, fontFamily = font)
+                if (group.title in open) {
+                    items(group.ids, key = { "desk-$it" }) { id ->
+                        val desk = Catalog.desk(id) ?: return@items
+                        Check(desk.label, model.enabled[id] == true, colors, font, Color(desk.color.toInt())) { model.setDesk(id, it) }
+                    }
                 }
-                Spacer(Modifier.height(24.dp))
             }
         }
     }
 }
 
 @Composable
-private fun Section(title: String, colors: Paint, font: FontFamily) {
-    Text(title, color = colors.ink, fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
+private fun SourceSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
+    var open by remember { mutableStateOf(setOf(Catalog.outletGroups.first().first)) }
+    Scaffold(containerColor = colors.paper) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
+            item { SubHead("المصادر", colors, font) { model.backSettings() } }
+            Catalog.outletGroups.forEach { (group, title) ->
+                val outlets = Catalog.outlets.filter { it.group == group }
+                item {
+                    MenuRow(title, "${outlets.count { it.id in model.sources }} / ${outlets.size}", colors, font) {
+                        open = if (group in open) open - group else open + group
+                    }
+                }
+                if (group in open) {
+                    items(outlets, key = { it.id }) { outlet ->
+                        Check(outlet.label, outlet.id in model.sources, colors, font) { model.setSource(outlet.id, it) }
+                    }
+                }
+            }
+        }
+    }
 }
+
+@Composable
+private fun EditionSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
+    var morning by remember { mutableStateOf(model.morning) }
+    var evening by remember { mutableStateOf(model.evening) }
+    val fields = fieldColors(colors)
+    Scaffold(containerColor = colors.paper) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            SubHead("النشرة", colors, font) { model.backSettings() }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(morning, { morning = it }, label = { Text("الصباح") }, modifier = Modifier.weight(1f), colors = fields, singleLine = true)
+                OutlinedTextField(evening, { evening = it }, label = { Text("المساء") }, modifier = Modifier.weight(1f), colors = fields, singleLine = true)
+            }
+            Spacer(Modifier.height(16.dp))
+            SaveButton(colors, font) { model.savePrefs(model.key, model.modelName, morning, evening) }
+            Note(model, colors, font)
+        }
+    }
+}
+
+@Composable
+private fun LookSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
+    Scaffold(containerColor = colors.paper) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            SubHead("المظهر", colors, font) { model.backSettings() }
+            Text("الخط", color = colors.muted, fontSize = 13.sp, fontFamily = font)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("cairo" to "القاهرة", "naskh" to "نسخ", "plex" to "بليكس").forEach { (id, label) ->
+                    val on = model.font == id
+                    Text(
+                        label,
+                        color = if (on) colors.paper else colors.ink,
+                        fontFamily = face(id),
+                        modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(if (on) colors.ink else colors.sheet).clickable { model.setLook(nextFont = id) }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                }
+            }
+            Choice("الحجم", listOf("sm" to "صغير", "md" to "وسط", "lg" to "كبير"), model.size, colors, font) { model.setLook(nextSize = it) }
+            Choice("اللون", listOf("dark" to "داكن", "light" to "فاتح"), model.theme, colors, font) { model.setLook(nextTheme = it) }
+        }
+    }
+}
+
+@Composable
+private fun SummarySettings(model: MawjizModel, colors: Paint, font: FontFamily) {
+    var draftKey by remember { mutableStateOf(model.key) }
+    var draftModel by remember { mutableStateOf(model.modelName) }
+    val fields = fieldColors(colors)
+    Scaffold(containerColor = colors.paper) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+            SubHead("التلخيص", colors, font) { model.backSettings() }
+            OutlinedTextField(draftKey, { draftKey = it }, label = { Text("مفتاح Gemini") }, modifier = Modifier.fillMaxWidth(), colors = fields, singleLine = true)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(draftModel, { draftModel = it }, label = { Text("النموذج") }, modifier = Modifier.fillMaxWidth(), colors = fields, singleLine = true)
+            TextButton(onClick = { model.testKey(draftKey, draftModel) }) { Text("اختبار المفتاح", color = colors.ink, fontFamily = font) }
+            SaveButton(colors, font) { model.savePrefs(draftKey, draftModel, model.morning, model.evening) }
+            Note(model, colors, font)
+        }
+    }
+}
+
+@Composable
+private fun SubHead(title: String, colors: Paint, font: FontFamily, onBack: () -> Unit) {
+    TextButton(onClick = onBack) { Text("رجوع", color = colors.muted, fontFamily = font) }
+    Text(title, color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun MenuRow(title: String, meta: String, colors: Paint, font: FontFamily, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 14.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text(title, color = colors.ink, fontFamily = font, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+                Text(meta, color = colors.muted, fontSize = 13.sp, fontFamily = font)
+            }
+            Text("‹", color = colors.muted, fontFamily = font, fontSize = 22.sp)
+        }
+    }
+    HorizontalDivider(color = colors.line)
+}
+
+@Composable
+private fun SaveButton(colors: Paint, font: FontFamily, onClick: () -> Unit) {
+    Button(onClick = onClick, colors = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Color(0xFFF4EFE6))) {
+        Text("حفظ", fontFamily = font)
+    }
+}
+
+@Composable
+private fun Note(model: MawjizModel, colors: Paint, font: FontFamily) {
+    if (model.note.isBlank()) return
+    Spacer(Modifier.height(8.dp))
+    Text(model.note, color = colors.muted, fontSize = 13.sp, fontFamily = font)
+}
+
+@Composable
+private fun fieldColors(colors: Paint) = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = colors.ink, unfocusedTextColor = colors.ink,
+    focusedBorderColor = Teal, unfocusedBorderColor = colors.line,
+    cursorColor = colors.ink, focusedLabelColor = colors.muted, unfocusedLabelColor = colors.muted,
+)
 
 @Composable
 private fun Check(label: String, checked: Boolean, colors: Paint, font: FontFamily, mark: Color? = null, onChange: (Boolean) -> Unit) {
