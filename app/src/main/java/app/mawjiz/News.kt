@@ -75,7 +75,7 @@ object Catalog {
     fun defaultEnabled() = desks.associate { it.id to (it.id != "sports" && it.id != "tech" && it.id != "fun") }
 }
 
-private val marks = setOf('.', '،', '؛', ':', '؟', '!', '«', '»', '"', '\'', '(', ')', '-', '–', '—', '%', '٪')
+private val marks = setOf('.', '،', '؛', ':', '؟', '!', '«', '»', '(', ')', '-', '–', '—', '%', '٪')
 private val alwaysDrop = listOf("اهتمامات الصحف", "تصدرت اهتمام", "جولة الصحافة", "عناوين الصحف", "مانشيت", "خطايا", "اخطاء الغرب", "افتتاحيه", "اللعب بالنار", "مقال راي", "دوار الحركة", "غثيان", "مشاهير", "ماذا يعني").map(::normalize)
 private val softDrop = listOf("يتفقد", "تفقد", "يرعي", "يكرم", "معرض", "مهرجان", "جناح", "صقور", "مبادرة", "تعزيز الوعي").map(::normalize)
 private val hard = listOf("قصف", "حرب", "غاره", "صاروخ", "عقوبات", "قتل", "اشتباك", "هدنه", "هرمز", "نفط", "اوبك", "اعتقال", "هجوم", "اتفاق", "انفجار", "سيطر", "استهدف", "اعلن", "اصدر", "فرض", "اغلق", "انسحب", "غزو", "اسقاط", "وقع", "يعلن").map(::normalize)
@@ -139,22 +139,25 @@ private fun riyadhIsCity(norm: String): Boolean {
 }
 
 fun decodeFeed(input: String): String {
-    var text = input.replace(Regex("<[^>]+>"), " ")
-    text = text.replace(Regex("&#x([0-9a-fA-F]+);")) { mark ->
-        val code = mark.groupValues[1].toIntOrNull(16) ?: return@replace " "
-        entityChar(code)
+    var text = input
+    repeat(2) {
+        text = text
+            .replace("\u0026nbsp;", " ", ignoreCase = true)
+            .replace("\u0026quot;", " ", ignoreCase = true)
+            .replace("\u0026apos;", " ", ignoreCase = true)
+            .replace("\u0026lt;", "<", ignoreCase = true)
+            .replace("\u0026gt;", ">", ignoreCase = true)
+            .replace("\u0026amp;", "\u0026", ignoreCase = true)
+        text = text.replace(Regex("&#x([0-9a-fA-F]+);")) { mark ->
+            val code = mark.groupValues[1].toIntOrNull(16) ?: return@replace " "
+            entityChar(code)
+        }
+        text = text.replace(Regex("&#(\\d+);")) { mark ->
+            val code = mark.groupValues[1].toIntOrNull() ?: return@replace " "
+            entityChar(code)
+        }
     }
-    text = text.replace(Regex("&#(\\d+);")) { mark ->
-        val code = mark.groupValues[1].toIntOrNull() ?: return@replace " "
-        entityChar(code)
-    }
-    return text
-        .replace("\u0026nbsp;", " ", ignoreCase = true)
-        .replace("\u0026amp;", " ", ignoreCase = true)
-        .replace("\u0026quot;", " ", ignoreCase = true)
-        .replace("\u0026apos;", " ", ignoreCase = true)
-        .replace("\u0026lt;", " ", ignoreCase = true)
-        .replace("\u0026gt;", " ", ignoreCase = true)
+    return text.replace(Regex("<[^>]+>"), " ").replace(Regex("#[0-9A-Fa-f]{3,8}"), " ")
 }
 
 private fun entityChar(code: Int): String = when (code) {
@@ -187,6 +190,35 @@ fun arabicProse(input: String): String {
         .replace(Regex("\\s+([.،؛:؟!])"), "$1")
         .trim()
         .trim('.', '،', '؛', ':', '(', ')', '-', '–', '—')
+        .let { dropStrayDigits(it) }
+        .let { dedupeSentences(it) }
+}
+
+private fun dropStrayDigits(input: String): String {
+    val singles = Regex("(?<![0-9.])(\\d)(?![0-9.%٪])").findAll(input).map { it.groupValues[1] }.toList()
+    val repeated = singles.groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
+    if (repeated.isEmpty()) return input
+    val pattern = repeated.joinToString("|") { Regex.escape(it) }
+    return input.replace(Regex("(?<![0-9.])($pattern)(?![0-9.%٪])"), " ").replace(Regex("\\s+"), " ").trim()
+}
+
+private fun dedupeSentences(input: String): String {
+    val kept = mutableListOf<String>()
+    for (part in input.split(Regex("(?<=[.؟!])\\s+"))) {
+        val bit = part.trim().trim('.', '،')
+        if (bit.length < 8) continue
+        if (kept.any { sameWords(it, bit) }) continue
+        kept += bit
+    }
+    return if (kept.isEmpty()) input.trim() else kept.joinToString(". ")
+}
+
+private fun sameWords(left: String, right: String): Boolean {
+    val a = tokens(left)
+    val b = tokens(right)
+    if (a.isEmpty() || b.isEmpty()) return false
+    val shared = a.intersect(b).size
+    return shared.toFloat() / minOf(a.size, b.size) >= 0.6f
 }
 
 fun readable(title: String, body: String): String {
@@ -195,12 +227,10 @@ fun readable(title: String, body: String): String {
         .split(Regex("(?<=[.؟!])\\s+"))
         .map { it.trim() }
         .firstOrNull { sentence ->
-            sentence.length in 28..180 &&
-                !sentence.contains('؟') &&
-                !normalize(sentence).startsWith(normalize(head).take(14))
+            sentence.length in 28..180 && !sentence.contains('؟') && !sameWords(head, sentence)
         }
         .orEmpty()
-    return if (extra.isBlank() || extra == head) head else "$head. $extra"
+    return arabicProse(if (extra.isBlank() || extra == head) head else "$head. $extra")
 }
 
 fun isNewsworthy(input: String): Boolean {
