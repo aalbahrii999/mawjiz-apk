@@ -67,6 +67,21 @@ class NewsRulesTest {
     }
 
     @Test
+    fun politicsDoesNotEatTheBatch() {
+        val politics = (1..8).map { Story("p$it", "قرار", listOf("politics"), it.toLong(), emptyList()) }
+        val health = Story("h", "حملة", listOf("health"), 20L, emptyList())
+        val mixed = mixBatch(politics + health, emptyMap())
+        assertTrue(mixed.count { primaryDesk(it.desks) == "politics" } <= 3)
+        assertTrue(mixed.any { primaryDesk(it.desks) == "health" })
+    }
+
+    @Test
+    fun healthStoryStaysLocalWhenSaudi() {
+        val desks = matchDesks("أعلنت وزارة الصحة السعودية بدء حملة تطعيم في جدة اليوم بعد الاجتماع", enabled, "واس")
+        assertEquals("local", scopeOf(primaryDesk(desks).orEmpty()))
+    }
+
+    @Test
     fun oilWithAmericaStaysWorld() {
         val desks = matchDesks("أعلن ترامب رفع إنتاج النفط بعد اجتماع البيت الأبيض اليوم", enabled, "رويترز")
         assertEquals("world", scopeOf(primaryDesk(desks).orEmpty()))

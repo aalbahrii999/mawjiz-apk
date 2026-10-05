@@ -38,6 +38,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     var readingMore by mutableStateOf("")
     var readingBusy by mutableStateOf(false)
     var taste by mutableStateOf<Map<String, Int>>(emptyMap())
+    var tasteDay by mutableStateOf("")
 
     init {
         load()
@@ -48,11 +49,13 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         if (loading) return
         loading = true
         note = ""
+        decayTaste()
         val desks = enabled
         val chosen = scopeSources
+        val liked = taste
         viewModelScope.launch {
             val incoming = withContext(Dispatchers.IO) {
-                val fresh = net.gather(desks, chosen)
+                val fresh = net.gather(desks, chosen, liked)
                 val written = net.rewrite(key, modelName, fresh, desks)
                 written.mapNotNull { retag(it, desks) }
             }
@@ -126,6 +129,20 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
 
     fun openPage(id: String) {
         page = id
+    }
+
+    fun interest(story: Story) {
+        val id = primaryDesk(story.desks) ?: return
+        val now = taste[id] ?: 0
+        taste = if (now > 0) taste - id else taste + (id to 4)
+        save()
+    }
+
+    private fun decayTaste() {
+        val day = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Riyadh")).toString()
+        if (tasteDay == day) return
+        tasteDay = day
+        taste = taste.mapValues { (_, count) -> count / 2 }.filterValues { it > 0 }
     }
 
     fun showScope(id: String) {
@@ -263,6 +280,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                 }
                 taste = map
             }
+            tasteDay = json.optString("tasteDay")
         } catch (_: Exception) {
             note = ""
         }
@@ -288,6 +306,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         val tasteJson = JSONObject()
         taste.forEach { (id, count) -> tasteJson.put(id, count) }
         json.put("taste", tasteJson)
+        json.put("tasteDay", tasteDay)
         val items = JSONArray()
         stories.forEach { story ->
             val links = JSONArray()

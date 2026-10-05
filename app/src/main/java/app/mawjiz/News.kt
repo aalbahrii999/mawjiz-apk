@@ -37,11 +37,14 @@ object Catalog {
         Desk("sports", "رياضة", 0xFF4F9D6E, emptyList()),
         Desk("tech", "تقنية", 0xFF5C8FBF, emptyList()),
         Desk("fun", "ترفيه", 0xFFB56B8A, emptyList()),
+        Desk("health", "صحة", 0xFF2F8F78, listOf("صحة", "وزارة الصحة", "مستشفى", "لقاح")),
+        Desk("science", "علم", 0xFF3D6FBF, listOf("ناسا", "فضاء", "اكتشاف", "علماء", "مختبر")),
+        Desk("culture", "ثقافة", 0xFF8D6BB5, listOf("ثقافة", "متحف", "رواية", "جائزة أدبية")),
     )
     val groups = listOf(
         DeskGroup("محلي", listOf("saudi", "oil")),
         DeskGroup("إقليمي", listOf("gaza", "yemen", "iran", "lebanon", "syria", "iraq", "redsea", "gulf")),
-        DeskGroup("عالمي", listOf("europe", "america", "china", "russia", "politics", "economy", "sports", "tech", "fun")),
+        DeskGroup("عالمي", listOf("europe", "america", "china", "russia", "politics", "economy", "health", "science", "culture", "sports", "tech", "fun")),
     )
     val scopes = listOf("local" to "محلي", "region" to "إقليمي", "world" to "عالمي")
     val queries = mapOf(
@@ -49,6 +52,12 @@ object Catalog {
         "syria" to "سوريا", "iraq" to "العراق", "redsea" to "البحر الأحمر", "saudi" to "السعودية",
         "gulf" to "الخليج", "oil" to "أوبك النفط", "politics" to "سياسة الشرق الأوسط", "economy" to "اقتصاد",
         "europe" to "أوروبا أوكرانيا", "america" to "أمريكا واشنطن", "china" to "الصين", "russia" to "روسيا",
+        "health" to "صحة", "science" to "اكتشاف علمي", "culture" to "ثقافة",
+    )
+    val variety = mapOf(
+        "local" to listOf("صحة السعودية", "ثقافة السعودية"),
+        "region" to listOf("ثقافة عربية", "صحة عربية"),
+        "world" to listOf("اكتشاف علمي", "ناسا فضاء", "صحة عالمية"),
     )
     val outletGroups = listOf(
         "global" to "وكالات عالمية",
@@ -93,7 +102,7 @@ object Catalog {
 private val marks = setOf('.', '،', '؛', ':', '؟', '!', '«', '»', '(', ')', '-', '–', '—', '%', '٪')
 private val alwaysDrop = listOf("اهتمامات الصحف", "تصدرت اهتمام", "جولة الصحافة", "عناوين الصحف", "مانشيت", "خطايا", "اخطاء الغرب", "افتتاحيه", "اللعب بالنار", "مقال راي", "دوار الحركة", "غثيان", "مشاهير", "ماذا يعني").map(::normalize)
 private val softDrop = listOf("يتفقد", "تفقد", "يرعي", "يكرم", "معرض", "مهرجان", "جناح", "صقور", "مبادرة", "تعزيز الوعي").map(::normalize)
-private val hard = listOf("قصف", "حرب", "غاره", "صاروخ", "عقوبات", "قتل", "اشتباك", "هدنه", "هرمز", "نفط", "اوبك", "اعتقال", "هجوم", "اتفاق", "انفجار", "سيطر", "استهدف", "اعلن", "اصدر", "فرض", "اغلق", "انسحب", "غزو", "اسقاط", "وقع", "يعلن").map(::normalize)
+private val hard = listOf("قصف", "حرب", "غاره", "صاروخ", "عقوبات", "قتل", "اشتباك", "هدنه", "هرمز", "نفط", "اوبك", "اعتقال", "هجوم", "اتفاق", "انفجار", "سيطر", "استهدف", "اعلن", "اصدر", "فرض", "اغلق", "انسحب", "غزو", "اسقاط", "وقع", "يعلن", "اكتشف", "اطلق", "فاز", "حقق").map(::normalize)
 private val softTopics = listOf(
     "sports" to listOf("دوري", "الهلال", "النصر", "الاهلي", "مباراه", "ملعب", "كاس"),
     "tech" to listOf("ذكاء اصطناعي", "تقنيه", "هاتف"),
@@ -264,13 +273,27 @@ fun isNewsworthy(input: String): Boolean {
 
 fun scopeOf(id: String): String = when (id) {
     "saudi", "oil" -> "local"
-    "europe", "america", "china", "russia", "politics", "economy", "sports", "tech", "fun" -> "world"
+    "europe", "america", "china", "russia", "politics", "economy", "health", "science", "culture", "sports", "tech", "fun" -> "world"
     else -> "region"
 }
 
+private val topicDesks = setOf("oil", "politics", "economy", "health", "science", "culture", "sports", "tech", "fun")
+private val dryDesks = setOf("politics", "economy")
+
 fun primaryDesk(desks: List<String>): String? {
-    val place = desks.firstOrNull { it != "oil" && it != "politics" && it != "economy" }
-    return place ?: desks.firstOrNull()
+    return desks.firstOrNull { it !in topicDesks } ?: desks.firstOrNull()
+}
+
+fun mixBatch(stories: List<Story>, taste: Map<String, Int>): List<Story> {
+    val grouped = stories.groupBy { primaryDesk(it.desks) ?: "politics" }
+    val lively = grouped.keys.any { it !in dryDesks }
+    val kept = mutableListOf<Story>()
+    for ((desk, items) in grouped) {
+        val boost = (taste[desk] ?: 0).coerceIn(0, 5)
+        val quota = if (lively && desk in dryDesks) 3 else 5 + boost
+        kept += items.sortedByDescending { it.at }.take(quota)
+    }
+    return kept.sortedByDescending { it.at }
 }
 
 fun storyInScope(story: Story, scopes: Set<String>): Boolean {

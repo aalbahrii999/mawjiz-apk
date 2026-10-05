@@ -122,10 +122,9 @@ fun MawjizApp(model: MawjizModel = viewModel()) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: android.content.Context) {
-    val now = System.currentTimeMillis()
     val visible = model.stories.filter { story ->
         story.desks.any { model.enabled[it] == true } && storyInScope(story, model.selected)
-    }.sortedWith(compareByDescending<Story> { rankScore(it, now, model.taste) }.thenByDescending { it.at })
+    }.sortedByDescending { it.at }
     Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -154,7 +153,7 @@ private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, 
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                         items(visible, key = { it.id }) { story ->
-                            StoryRow(story, colors, font, body, { model.openStory(story) }, { model.toggleSaved(story) }, { shareStory(context, model.shareText(story)) })
+                            StoryRow(story, colors, font, body, (model.taste[primaryDesk(story.desks).orEmpty()] ?: 0) > 0, { model.openStory(story) }, { model.toggleSaved(story) }, { model.interest(story) }, { shareStory(context, model.shareText(story)) })
                             HorizontalDivider(color = colors.line)
                         }
                     }
@@ -242,8 +241,10 @@ private fun StoryRow(
     colors: Paint,
     font: FontFamily,
     body: TextUnit,
+    interested: Boolean,
     onOpen: () -> Unit,
     onSave: () -> Unit,
+    onInterest: () -> Unit,
     onShare: () -> Unit,
 ) {
     val stamp = remember(story.at) {
@@ -278,6 +279,7 @@ private fun StoryRow(
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(if (interested) "مهتم" else "اهتمام", color = if (interested) colors.ink else colors.muted, fontSize = 13.sp, fontWeight = if (interested) FontWeight.Bold else FontWeight.Normal, fontFamily = font, modifier = Modifier.clickable(onClick = onInterest))
                     Text(if (story.saved) "محفوظ" else "حفظ", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onSave))
                     Text("مشاركة", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onShare))
                     Text("توسيع", color = colors.muted, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onOpen))
@@ -542,7 +544,7 @@ private fun SavedScreen(model: MawjizModel, colors: Paint, font: FontFamily, bod
         } else {
             LazyColumn {
                 items(items, key = { it.id }) { story ->
-                    StoryRow(story, colors, font, body, { model.openStory(story) }, { model.toggleSaved(story) }, { shareStory(context, model.shareText(story)) })
+                    StoryRow(story, colors, font, body, (model.taste[primaryDesk(story.desks).orEmpty()] ?: 0) > 0, { model.openStory(story) }, { model.toggleSaved(story) }, { model.interest(story) }, { shareStory(context, model.shareText(story)) })
                     HorizontalDivider(color = colors.line)
                 }
             }

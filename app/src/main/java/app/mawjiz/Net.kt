@@ -17,25 +17,22 @@ class Net {
     private val http = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
     private val fallbacks = listOf("gemini-2.5-flash-lite", "gemini-2.0-flash")
 
-    fun gather(enabled: Map<String, Boolean>, scopeSources: Map<String, List<String>>): List<Story> {
+    fun gather(enabled: Map<String, Boolean>, scopeSources: Map<String, List<String>>, taste: Map<String, Int>): List<Story> {
         val stories = mutableListOf<Story>()
         for ((scope, ids) in listOf("local", "region", "world").map { it to scopeSources[it].orEmpty() }) {
             if (ids.isEmpty()) continue
-            val desks = Catalog.desksIn(scope).filter { enabled[it] == true }
+            val desks = Catalog.desksIn(scope).filter { enabled[it] == true }.sortedByDescending { taste[it] ?: 0 }
             val jobs = mutableListOf<Pair<String, String>>()
             for (outlet in Catalog.outlets) {
                 if (outlet.id !in ids || outlet.feed == null) continue
                 jobs += outlet.feed to outlet.label
             }
+            for (query in Catalog.variety[scope].orEmpty()) jobs += google(query) to ""
             for (desk in desks) {
                 val query = Catalog.queries[desk] ?: continue
                 jobs += google(query) to ""
             }
-            for (outlet in Catalog.outlets) {
-                if (outlet.id !in ids || outlet.feed != null) continue
-                jobs += google(outlet.query) to outlet.label
-            }
-            for (job in jobs.distinctBy { it.first }.take(4)) {
+            for (job in jobs.distinctBy { it.first }.take(8)) {
                 val xml = get(job.first) ?: continue
                 for (item in parse(xml, job.second)) {
                     val classed = classify(item.title, item.body, item.outlet, enabled) ?: continue
@@ -53,7 +50,7 @@ class Net {
                 }
             }
         }
-        return stories.sortedByDescending { it.at }
+        return mixBatch(stories, taste)
     }
 
     fun rewrite(key: String, model: String, items: List<Story>, enabled: Map<String, Boolean>): List<Story> {
@@ -65,10 +62,10 @@ class Net {
             "أنت محرر نشرة عربية. اكتب بالفصحى البسيطة، بجمل تامة، بلا ديباجة.",
             "لكل خبر سطران فقط: الأول الفاعل والفعل والنتيجة، والثاني الأثر إن ورد في النص.",
             "لا سؤال، لا رأي، لا «يُذكر أن»، لا اسم وكالة، ولا رقم لم يرد في النص.",
-            "صنّف موضوع الحدث لا الجريدة. صندوق الاستثمارات أو أرامكو أو نيوم = saudi. الحوثيون = yemen. حماس أو رفح = gaza. الحرس الثوري أو طهران = iran. البيت الأبيض أو ترامب = america. الكرملين أو بوتين = russia. كييف أو الناتو = europe. بكين = china.",
+            "صنّف موضوع الحدث لا الجريدة. أرامكو أو نيوم = saudi. الحوثيون = yemen. حماس = gaza. الحرس الثوري = iran. البيت الأبيض أو ترامب = america. الكرملين = russia. كييف أو الناتو = europe. بكين = china. صحة واكتشاف وثقافة تبقى كذلك ولا تُحوَّل إلى سياسة.",
             "إذا اجتمع نفط مع دولة، الدولة هي التصنيف الأول إلا إذا كان الفاعل أرامكو أو أوبك أو السعودية.",
             "أسقط keep=false: السؤال، مقال الرأي، جولة الصحف، والخبر بلا فاعل وفعل ونتيجة.",
-            "المفاتيح: gaza yemen iran lebanon syria iraq redsea saudi gulf oil politics economy europe america china russia sports tech fun",
+            "المفاتيح: gaza yemen iran lebanon syria iraq redsea saudi gulf oil politics economy europe america china russia health science culture sports tech fun",
             "JSON فقط: {\"items\":[{\"id\":\"\",\"text\":\"\",\"keep\":true,\"desks\":[\"saudi\"]}]}",
             payload.toString(),
         ).joinToString("\n")
