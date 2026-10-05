@@ -42,7 +42,14 @@ class Net {
             val xml = get(job.first) ?: continue
             for (item in parse(xml, job.second)) {
                 val classed = classify(item.title, item.body, item.outlet, enabled) ?: continue
-                val story = Story(storyId(item.url), classed.first, classed.second, item.at, listOf(Source(item.outlet, item.url)))
+                val story = Story(
+                    storyId(item.url),
+                    classed.first,
+                    classed.second,
+                    item.at,
+                    listOf(Source(item.outlet, item.url)),
+                    detailFor(item.title, item.body, item.outlet, classed.first),
+                )
                 if (stories.none { sameStory(it, story) }) stories += story
             }
         }
@@ -75,6 +82,21 @@ class Net {
             if (desks.isEmpty() || story.desks.none { it in desks }) return@mapNotNull story
             story.copy(text = text, desks = desks)
         }
+    }
+
+    fun article(url: String): String? {
+        if (!url.startsWith("https://") || url.contains("news.google.")) return null
+        val html = get(url) ?: return null
+        val plain = html.replace(Regex("(?is)<(script|style|noscript)[^>]*>.*?</\\1>"), " ")
+        val parts = Regex("(?is)<p[^>]*>(.*?)</p>")
+            .findAll(plain)
+            .map { arabicProse(it.groupValues[1]) }
+            .filter { bit -> bit.length >= 40 && bit.count { it.code in 0x0600..0x06FF } >= 20 }
+            .distinct()
+            .take(4)
+            .toList()
+        val text = parts.joinToString(" ")
+        return text.take(900).ifBlank { null }
     }
 
     fun testKey(key: String, model: String): String {

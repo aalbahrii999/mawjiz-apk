@@ -6,7 +6,15 @@ data class Desk(val id: String, val label: String, val color: Long, val words: L
 data class DeskGroup(val title: String, val ids: List<String>)
 data class Outlet(val id: String, val label: String, val group: String, val query: String, val feed: String? = null)
 data class Source(val outlet: String, val url: String)
-data class Story(val id: String, val text: String, val desks: List<String>, val at: Long, val sources: List<Source>)
+data class Story(
+    val id: String,
+    val text: String,
+    val desks: List<String>,
+    val at: Long,
+    val sources: List<Source>,
+    val detail: String = "",
+    val saved: Boolean = false,
+)
 
 object Catalog {
     val desks = listOf(
@@ -269,6 +277,30 @@ fun matchDesks(text: String, enabled: Map<String, Boolean>, outlet: String = "")
     if (enabled["economy"] == true && economyWords.any { norm.contains(it) }) return listOf("economy")
     if (enabled["politics"] == true && politicsWords.any { norm.contains(it) }) return listOf("politics")
     return emptyList()
+}
+
+fun detailFor(title: String, body: String, outlet: String, card: String): String {
+    val parts = arabicProse(body)
+        .split(Regex("(?<=[.؟!])\\s+"))
+        .map { it.trim() }
+        .filter { sentence -> sentence.length >= 24 && !sentence.contains('؟') && !sameWords(card, sentence) }
+        .take(3)
+    if (parts.isEmpty()) return ""
+    return stripMasthead(parts.joinToString(". "), outlet)
+}
+
+private val heavyNews = listOf("قصف", "قتل", "حرب", "غاره", "صاروخ", "عقوبات", "اوبك", "نفط", "انفجار", "غزو", "احتل", "اغتيال", "اشتباك").map(::normalize)
+private val wireNames = listOf("رويترز", "بي بي سي", "واس", "الجزيرة", "فرانس برس", "أسوشيتد برس")
+
+fun rankScore(story: Story, now: Long, taste: Map<String, Int>): Int {
+    val hours = ((now - story.at).coerceAtLeast(0L) / 3_600_000L).toInt()
+    val fresh = (48 - hours).coerceIn(0, 48)
+    val penalty = if (hours > 48) 220 else 0
+    val norm = normalize(story.text)
+    val weight = if (heavyNews.any { norm.contains(it) }) 180 else 40
+    val wire = if (story.sources.any { source -> wireNames.any { source.outlet.contains(it) } }) 15 else 0
+    val liked = story.desks.sumOf { (taste[it] ?: 0).coerceAtMost(8) } * 4
+    return weight + fresh + wire + liked - penalty
 }
 
 fun classify(title: String, body: String, outlet: String, enabled: Map<String, Boolean>): Pair<String, List<String>>? {

@@ -32,6 +32,11 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     var theme by mutableStateOf("dark")
     var note by mutableStateOf("")
     var page by mutableStateOf("")
+    var tab by mutableStateOf("feed")
+    var reading by mutableStateOf<Story?>(null)
+    var readingMore by mutableStateOf("")
+    var readingBusy by mutableStateOf(false)
+    var taste by mutableStateOf<Map<String, Int>>(emptyMap())
 
     init {
         load()
@@ -58,11 +63,64 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openSettings() {
+        tab = "settings"
         page = "home"
+        reading = null
+    }
+
+    fun showFeed() {
+        tab = "feed"
+        page = ""
+        reading = null
+    }
+
+    fun showSaved() {
+        tab = "saved"
+        page = ""
+        reading = null
     }
 
     fun backSettings() {
-        page = if (page == "home") "" else "home"
+        page = if (page == "home" || page.isEmpty()) "" else "home"
+        if (page.isEmpty()) tab = "feed"
+    }
+
+    fun openStory(story: Story) {
+        reading = story
+        readingMore = story.detail
+        val next = taste.toMutableMap()
+        story.desks.forEach { id -> next[id] = ((next[id] ?: 0) + 1).coerceAtMost(20) }
+        taste = next
+        save()
+        val url = story.sources.firstOrNull()?.url.orEmpty()
+        if (url.isBlank() || story.detail.length > 180) return
+        readingBusy = true
+        viewModelScope.launch {
+            val more = withContext(Dispatchers.IO) { net.article(url) }
+            readingBusy = false
+            if (more.isNullOrBlank() || reading?.id != story.id) return@launch
+            readingMore = more
+            stories = stories.map { if (it.id == story.id) it.copy(detail = more) else it }
+            reading = stories.find { it.id == story.id }
+            save()
+        }
+    }
+
+    fun closeStory() {
+        reading = null
+        readingMore = ""
+        readingBusy = false
+    }
+
+    fun toggleSaved(story: Story) {
+        stories = stories.map { if (it.id == story.id) it.copy(saved = !it.saved) else it }
+        reading = stories.find { it.id == story.id } ?: reading
+        save()
+    }
+
+    fun shareText(story: Story): String {
+        val outlet = story.sources.firstOrNull { it.outlet.isNotBlank() }?.outlet
+        return story.text + (if (outlet.isNullOrBlank()) "" else "\n$outlet") + "\nموجز"
     }
 
     fun openPage(id: String) {
@@ -70,7 +128,10 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleFilter(id: String) {
-        selected = if (id in selected) selected - id else selected + id
+        val on = id !in selected
+        selected = if (on) selected + id else selected - id
+        if (on) taste = taste + (id to ((taste[id] ?: 0) + 1).coerceAtMost(20))
+        save()
     }
 
     fun showAll() {
@@ -170,9 +231,27 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                         links += Source(source.optString("outlet"), source.optString("url"))
                     }
                 }
-                loaded += Story(row.optString("id"), row.optString("text"), row.optJSONArray("desks").strings(), row.optLong("at"), links)
+                loaded += Story(
+                    row.optString("id"),
+                    row.optString("text"),
+                    row.optJSONArray("desks").strings(),
+                    row.optLong("at"),
+                    links,
+                    row.optString("detail"),
+                    row.optBoolean("saved"),
+                )
             }
             stories = mergeStories(emptyList(), loaded, System.currentTimeMillis()).mapNotNull { retag(it, enabled) }
+            val tasteJson = json.optJSONObject("taste")
+            if (tasteJson != null) {
+                val map = mutableMapOf<String, Int>()
+                val keys = tasteJson.keys()
+                while (keys.hasNext()) {
+                    val id = keys.next()
+                    map[id] = tasteJson.optInt(id)
+                }
+                taste = map
+            }
         } catch (_: Exception) {
             note = ""
         }
@@ -193,11 +272,23 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         val enabledJson = JSONObject()
         enabled.forEach { (id, on) -> enabledJson.put(id, on) }
         json.put("enabled", enabledJson)
+        val tasteJson = JSONObject()
+        taste.forEach { (id, count) -> tasteJson.put(id, count) }
+        json.put("taste", tasteJson)
         val items = JSONArray()
         stories.forEach { story ->
             val links = JSONArray()
             story.sources.forEach { links.put(JSONObject().put("outlet", it.outlet).put("url", it.url)) }
-            items.put(JSONObject().put("id", story.id).put("text", story.text).put("desks", JSONArray(story.desks)).put("at", story.at).put("sources", links))
+            items.put(
+                JSONObject()
+                    .put("id", story.id)
+                    .put("text", story.text)
+                    .put("detail", story.detail)
+                    .put("saved", story.saved)
+                    .put("desks", JSONArray(story.desks))
+                    .put("at", story.at)
+                    .put("sources", links),
+            )
         }
         json.put("stories", items)
         prefs.edit().putString("state", json.toString()).apply()

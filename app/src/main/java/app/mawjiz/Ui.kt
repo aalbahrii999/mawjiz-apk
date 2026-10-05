@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -90,36 +91,48 @@ fun MawjizApp(model: MawjizModel = viewModel()) {
     val colors = paint(model.theme)
     val font = face(model.font)
     val body = when (model.size) { "sm" -> 15.sp; "lg" -> 20.sp; else -> 17.sp }
-    BackHandler(enabled = model.page.isNotEmpty()) { model.backSettings() }
-    when (model.page) {
-        "" -> TimelineScreen(model, colors, font, body)
-        "home" -> SettingsHome(model, colors, font)
-        "desks" -> DeskSettings(model, colors, font)
-        "sources" -> SourceSettings(model, colors, font)
-        "edition" -> EditionSettings(model, colors, font)
-        "look" -> LookSettings(model, colors, font)
-        else -> SummarySettings(model, colors, font)
+    val context = LocalContext.current
+    BackHandler(enabled = model.reading != null || model.page.isNotEmpty()) {
+        if (model.reading != null) model.closeStory() else model.backSettings()
+    }
+    if (model.reading != null) {
+        ReaderScreen(model, colors, font, body, context)
+        return
+    }
+    Scaffold(containerColor = colors.paper, bottomBar = { BottomBar(model, colors, font) }) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (model.tab) {
+                "saved" -> SavedScreen(model, colors, font, body, context)
+                "settings" -> when (model.page) {
+                    "desks" -> DeskSettings(model, colors, font)
+                    "sources" -> SourceSettings(model, colors, font)
+                    "edition" -> EditionSettings(model, colors, font)
+                    "look" -> LookSettings(model, colors, font)
+                    "summary" -> SummarySettings(model, colors, font)
+                    else -> SettingsHome(model, colors, font)
+                }
+                else -> TimelineScreen(model, colors, font, body, context)
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit) {
+private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: android.content.Context) {
+    val now = System.currentTimeMillis()
     val visible = model.stories.filter { story ->
         story.desks.any { model.enabled[it] == true } &&
             (model.selected.isEmpty() || story.desks.any { it in model.selected })
-    }
+    }.sortedWith(compareByDescending<Story> { rankScore(it, now, model.taste) }.thenByDescending { it.at })
     val chips = model.order.mapNotNull { id -> Catalog.desk(id)?.takeIf { model.enabled[id] == true } }
-    val context = LocalContext.current
-    Scaffold(containerColor = colors.paper) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+    Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("موجز", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
-                TextButton(onClick = { model.openSettings() }) { Text("الإعدادات", color = colors.muted, fontFamily = font) }
             }
             ChipRow(chips, model.selected, colors, font, model::toggleFilter, model::showAll, model::moveDesk)
             if (model.note.isNotBlank()) {
@@ -138,14 +151,13 @@ private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, 
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                         items(visible, key = { it.id }) { story ->
-                            StoryRow(story, colors, font, body)
+                            StoryRow(story, colors, font, body, { model.openStory(story) }, { model.toggleSaved(story) }, { shareStory(context, model.shareText(story)) })
                             HorizontalDivider(color = colors.line)
                         }
                     }
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -222,44 +234,51 @@ private fun FilterChip(
 }
 
 @Composable
-private fun StoryRow(story: Story, colors: Paint, font: FontFamily, body: TextUnit) {
-    val context = LocalContext.current
+private fun StoryRow(
+    story: Story,
+    colors: Paint,
+    font: FontFamily,
+    body: TextUnit,
+    onOpen: () -> Unit,
+    onSave: () -> Unit,
+    onShare: () -> Unit,
+) {
     val stamp = remember(story.at) {
         val format = SimpleDateFormat("d MMM · h:mm a", Locale("ar"))
         format.timeZone = TimeZone.getTimeZone("Asia/Riyadh")
         format.format(Date(story.at))
     }
     val lead = Catalog.desk(story.desks.firstOrNull().orEmpty())
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Box(
-            Modifier.size(42.dp).clip(CircleShape).background(Color((lead?.color ?: 0xFF1B5E56).toInt())),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(lead?.label?.take(1) ?: "م", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = font)
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                story.desks.take(2).forEach { id ->
-                    val desk = Catalog.desk(id) ?: return@forEach
-                    Text(desk.label, color = Color(desk.color.toInt()), fontWeight = FontWeight.Bold, fontSize = 15.sp, fontFamily = font, modifier = Modifier.padding(end = 8.dp))
-                }
-                Spacer(Modifier.weight(1f))
-                Text(stamp, color = colors.muted, fontSize = 12.sp, fontFamily = font)
+    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Row {
+            Box(
+                Modifier.size(42.dp).clip(CircleShape).background(Color((lead?.color ?: 0xFF1B5E56).toInt())),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(lead?.label?.take(1) ?: "م", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = font)
             }
-            Spacer(Modifier.height(4.dp))
-            Text(story.text, color = colors.ink, fontSize = body, lineHeight = body * 1.45, fontFamily = font)
-            story.sources.firstOrNull { it.outlet.isNotBlank() }?.let { source ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    source.outlet,
-                    color = colors.muted,
-                    fontSize = 12.sp,
-                    fontFamily = font,
-                    modifier = Modifier.clickable {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) }
-                    },
-                )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    story.desks.take(2).forEach { id ->
+                        val desk = Catalog.desk(id) ?: return@forEach
+                        Text(desk.label, color = Color(desk.color.toInt()), fontWeight = FontWeight.Bold, fontSize = 15.sp, fontFamily = font, modifier = Modifier.padding(end = 8.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(stamp, color = colors.muted, fontSize = 12.sp, fontFamily = font)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(story.text, color = colors.ink, fontSize = body, lineHeight = body * 1.45, fontFamily = font)
+                story.sources.firstOrNull { it.outlet.isNotBlank() }?.let { source ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(source.outlet, color = colors.muted, fontSize = 12.sp, fontFamily = font)
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(if (story.saved) "محفوظ" else "حفظ", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onSave))
+                    Text("مشاركة", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onShare))
+                    Text("توسيع", color = colors.muted, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onOpen))
+                }
             }
         }
     }
@@ -270,7 +289,7 @@ private fun SettingsHome(model: MawjizModel, colors: Paint, font: FontFamily) {
     val desksOn = model.enabled.values.count { it }
     val look = when (model.theme) { "light" -> "فاتح"; else -> "داكن" }
     val key = if (model.key.isBlank()) "بلا مفتاح" else "المفتاح محفوظ"
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             TextButton(onClick = { model.backSettings() }) { Text("رجوع", color = colors.muted, fontFamily = font) }
             Text("الإعدادات", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
@@ -287,7 +306,7 @@ private fun SettingsHome(model: MawjizModel, colors: Paint, font: FontFamily) {
 @Composable
 private fun DeskSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
     var open by remember { mutableStateOf(setOf(Catalog.groups.first().title)) }
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
             item { SubHead("التصنيفات", colors, font) { model.backSettings() } }
             Catalog.groups.forEach { group ->
@@ -310,7 +329,7 @@ private fun DeskSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
 @Composable
 private fun SourceSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
     var open by remember { mutableStateOf(setOf(Catalog.outletGroups.first().first)) }
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
             item { SubHead("المصادر", colors, font) { model.backSettings() } }
             Catalog.outletGroups.forEach { (group, title) ->
@@ -335,7 +354,7 @@ private fun EditionSettings(model: MawjizModel, colors: Paint, font: FontFamily)
     var morning by remember { mutableStateOf(model.morning) }
     var evening by remember { mutableStateOf(model.evening) }
     val fields = fieldColors(colors)
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             SubHead("النشرة", colors, font) { model.backSettings() }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -351,7 +370,7 @@ private fun EditionSettings(model: MawjizModel, colors: Paint, font: FontFamily)
 
 @Composable
 private fun LookSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             SubHead("المظهر", colors, font) { model.backSettings() }
             Text("الخط", color = colors.muted, fontSize = 13.sp, fontFamily = font)
@@ -377,7 +396,7 @@ private fun SummarySettings(model: MawjizModel, colors: Paint, font: FontFamily)
     var draftKey by remember { mutableStateOf(model.key) }
     var draftModel by remember { mutableStateOf(model.modelName) }
     val fields = fieldColors(colors)
-    Scaffold(containerColor = colors.paper) { padding ->
+    Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             SubHead("التلخيص", colors, font) { model.backSettings() }
             OutlinedTextField(draftKey, { draftKey = it }, label = { Text("مفتاح Gemini") }, modifier = Modifier.fillMaxWidth(), colors = fields, singleLine = true)
@@ -468,4 +487,82 @@ private fun playRefresh(context: Context) {
     val player = MediaPlayer.create(context, R.raw.refresh_chirp) ?: return
     player.setOnCompletionListener { it.release() }
     player.start()
+}
+
+@Composable
+private fun BottomBar(model: MawjizModel, colors: Paint, font: FontFamily) {
+    Row(Modifier.fillMaxWidth().background(colors.sheet).padding(vertical = 8.dp)) {
+        BarItem("الموجز", model.tab == "feed", colors, font, Modifier.weight(1f)) { model.showFeed() }
+        BarItem("محفوظ", model.tab == "saved", colors, font, Modifier.weight(1f)) { model.showSaved() }
+        BarItem("الإعدادات", model.tab == "settings", colors, font, Modifier.weight(1f)) { model.openSettings() }
+    }
+}
+
+@Composable
+private fun BarItem(label: String, on: Boolean, colors: Paint, font: FontFamily, modifier: Modifier, click: () -> Unit) {
+    Text(
+        label,
+        color = if (on) colors.ink else colors.muted,
+        fontFamily = font,
+        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+        fontSize = 14.sp,
+        modifier = modifier.clickable(onClick = click).padding(vertical = 10.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+}
+
+@Composable
+private fun SavedScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: Context) {
+    val items = model.stories.filter { it.saved }.sortedByDescending { it.at }
+    Column(Modifier.fillMaxSize()) {
+        Text("محفوظ", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font, modifier = Modifier.padding(16.dp))
+        if (items.isEmpty()) {
+            Text("لا محفوظات بعد.", color = colors.muted, fontFamily = font, modifier = Modifier.padding(horizontal = 16.dp))
+        } else {
+            LazyColumn {
+                items(items, key = { it.id }) { story ->
+                    StoryRow(story, colors, font, body, { model.openStory(story) }, { model.toggleSaved(story) }, { shareStory(context, model.shareText(story)) })
+                    HorizontalDivider(color = colors.line)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: Context) {
+    val story = model.reading ?: return
+    val shown = model.readingMore.ifBlank { story.detail.ifBlank { story.text } }
+    Column(Modifier.fillMaxSize().background(colors.paper).verticalScroll(rememberScrollState()).padding(16.dp)) {
+        TextButton(onClick = { model.closeStory() }) { Text("رجوع", color = colors.muted, fontFamily = font) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            story.desks.take(2).forEach { id ->
+                val desk = Catalog.desk(id) ?: return@forEach
+                Text(desk.label, color = Color(desk.color.toInt()), fontWeight = FontWeight.Bold, fontFamily = font, modifier = Modifier.padding(end = 8.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(shown, color = colors.ink, fontSize = body, lineHeight = body * 1.55, fontFamily = font)
+        if (model.readingBusy) {
+            Spacer(Modifier.height(12.dp))
+            Text("يجلب بقية النص…", color = colors.muted, fontSize = 13.sp, fontFamily = font)
+        }
+        story.sources.firstOrNull { it.outlet.isNotBlank() }?.let { source ->
+            Spacer(Modifier.height(16.dp))
+            Text(source.outlet, color = colors.muted, fontSize = 12.sp, fontFamily = font)
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(if (story.saved) "محفوظ" else "حفظ", color = colors.ink, fontFamily = font, modifier = Modifier.clickable { model.toggleSaved(story) })
+            Text("مشاركة", color = colors.ink, fontFamily = font, modifier = Modifier.clickable { shareStory(context, model.shareText(story)) })
+        }
+    }
+}
+
+private fun shareStory(context: Context, text: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    runCatching { context.startActivity(Intent.createChooser(send, "مشاركة")) }
 }

@@ -57,6 +57,14 @@ class NewsRulesTest {
     }
 
     @Test
+    fun warRanksAboveSoft() {
+        val now = 1_700_000_000_000L
+        val war = Story("a", "قصفت المقاتلات موقعاً في غزة وسقط قتلى في الغارات المتواصلة", listOf("gaza"), now - 3_600_000, emptyList())
+        val soft = Story("b", "أعلن البنك تثبيت الفائدة بعد اجتماع قصير في العاصمة اليوم", listOf("economy"), now - 60_000, emptyList())
+        assertTrue(rankScore(war, now, emptyMap()) > rankScore(soft, now, emptyMap()))
+    }
+
+    @Test
     fun questionAndPressRoundupDrop() {
         assertNull(classify("ماذا يعني التصعيد في اليمن؟", "", "بي بي سي", enabled))
         assertNull(classify("تصدرت اهتمامات الصحف الجزائرية الشأن السياسي اليوم في عددها", "", "واس", enabled))
