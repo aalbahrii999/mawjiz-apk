@@ -67,6 +67,15 @@ class NewsRulesTest {
     }
 
     @Test
+    fun oilWithAmericaStaysWorld() {
+        val desks = matchDesks("أعلن ترامب رفع إنتاج النفط بعد اجتماع البيت الأبيض اليوم", enabled, "رويترز")
+        assertEquals("world", scopeOf(primaryDesk(desks).orEmpty()))
+        val local = Story("a", "أعلن صندوق الاستثمارات شراء حصة بعد اجتماع المجلس اليوم", listOf("saudi"), 1L, emptyList())
+        assertTrue(storyInScope(local, setOf("local")))
+        assertFalse(storyInScope(local, setOf("world")))
+    }
+
+    @Test
     fun warRanksAboveSoft() {
         val now = 1_700_000_000_000L
         val war = Story("a", "قصفت المقاتلات موقعاً في غزة وسقط قتلى في الغارات المتواصلة", listOf("gaza"), now - 3_600_000, emptyList())

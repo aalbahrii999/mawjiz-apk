@@ -11,8 +11,8 @@ android {
         applicationId = "app.mawjiz"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "5.3.0"
+        versionCode = 10
+        versionName = "5.4.0"
     }
     buildTypes {
         release {

@@ -21,6 +21,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     var order by mutableStateOf(Catalog.defaultOrder)
     var enabled by mutableStateOf(Catalog.defaultEnabled())
     var sources by mutableStateOf(Catalog.defaultSources)
+    var scopeSources by mutableStateOf(Catalog.defaultScopeSources())
     var selected by mutableStateOf(setOf<String>())
     var loading by mutableStateOf(false)
     var key by mutableStateOf("")
@@ -48,7 +49,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         loading = true
         note = ""
         val desks = enabled
-        val chosen = sources
+        val chosen = scopeSources
         viewModelScope.launch {
             val incoming = withContext(Dispatchers.IO) {
                 val fresh = net.gather(desks, chosen)
@@ -127,10 +128,8 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         page = id
     }
 
-    fun toggleScope(id: String) {
-        val current = if (selected.isEmpty()) setOf("local", "region", "world") else selected
-        val next = if (id in current) current - id else current + id
-        selected = if (next.isEmpty() || next.size == 3) emptySet() else next
+    fun showScope(id: String) {
+        selected = if (id.isEmpty()) emptySet() else setOf(id)
         tab = "feed"
         page = ""
         save()
@@ -161,13 +160,15 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         save()
     }
 
-    fun setSource(id: String, on: Boolean) {
-        val next = if (on) (sources + id).distinct() else sources.filter { it != id }
+    fun setScopeSource(scope: String, id: String, on: Boolean) {
+        val current = scopeSources[scope].orEmpty()
+        val next = if (on) (current + id).distinct() else current.filter { it != id }
         if (next.isEmpty()) {
-            note = "اختر مصدرًا واحدًا على الأقل."
+            note = "أبقِ مصدرًا واحدًا في هذا النطاق."
             return
         }
-        sources = next
+        scopeSources = scopeSources + (scope to next)
+        sources = scopeSources.values.flatten().distinct()
         save()
     }
 
@@ -219,7 +220,15 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
             }
             val storedOrder = json.optJSONArray("order").strings().filter { Catalog.desk(it) != null }
             if (storedOrder.isNotEmpty()) order = (storedOrder + Catalog.defaultOrder).distinct()
-            sources = json.optJSONArray("sources").strings().ifEmpty { sources }
+            val scopeJson = json.optJSONObject("scopeSources")
+            if (scopeJson != null) {
+                val map = mutableMapOf<String, List<String>>()
+                for (scope in listOf("local", "region", "world")) {
+                    map[scope] = scopeJson.optJSONArray(scope).strings().ifEmpty { Catalog.defaultScopeSources()[scope].orEmpty() }
+                }
+                scopeSources = map
+            }
+            sources = scopeSources.values.flatten().distinct()
             selected = json.optJSONArray("selected").strings().filter { it in setOf("local", "region", "world") }.toSet()
             val loaded = mutableListOf<Story>()
             val items = json.optJSONArray("stories") ?: JSONArray()
@@ -269,7 +278,9 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
             .put("size", size)
             .put("theme", theme)
             .put("order", JSONArray(order))
-            .put("sources", JSONArray(sources))
+        val scopeJson = JSONObject()
+        scopeSources.forEach { (scope, ids) -> scopeJson.put(scope, JSONArray(ids)) }
+        json.put("scopeSources", scopeJson)
             .put("selected", JSONArray(selected.toList()))
         val enabledJson = JSONObject()
         enabled.forEach { (id, on) -> enabledJson.put(id, on) }

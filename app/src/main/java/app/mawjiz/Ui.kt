@@ -298,7 +298,7 @@ private fun SettingsHome(model: MawjizModel, colors: Paint, font: FontFamily) {
             Text("الإعدادات", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
             Spacer(Modifier.height(8.dp))
             MenuRow("التصنيفات", "$desksOn ظاهرة", colors, font) { model.openPage("desks") }
-            MenuRow("المصادر", "${model.sources.size} وكالة", colors, font) { model.openPage("sources") }
+            MenuRow("المصادر", "محلي ${model.scopeSources["local"]?.size ?: 0} · إقليمي ${model.scopeSources["region"]?.size ?: 0} · عالمي ${model.scopeSources["world"]?.size ?: 0}", colors, font) { model.openPage("sources") }
             MenuRow("النشرة", "${model.morning} · ${model.evening}", colors, font) { model.openPage("edition") }
             MenuRow("المظهر", look, colors, font) { model.openPage("look") }
             MenuRow("التلخيص", key, colors, font) { model.openPage("summary") }
@@ -331,20 +331,20 @@ private fun DeskSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
 
 @Composable
 private fun SourceSettings(model: MawjizModel, colors: Paint, font: FontFamily) {
-    var open by remember { mutableStateOf(setOf(Catalog.outletGroups.first().first)) }
+    var open by remember { mutableStateOf(setOf("local")) }
     Box(Modifier.fillMaxSize()) { val padding = PaddingValues(0.dp)
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
             item { SubHead("المصادر", colors, font) { model.backSettings() } }
-            Catalog.outletGroups.forEach { (group, title) ->
-                val outlets = Catalog.outlets.filter { it.group == group }
+            Catalog.scopes.forEach { (scope, title) ->
+                val chosen = model.scopeSources[scope].orEmpty()
                 item {
-                    MenuRow(title, "${outlets.count { it.id in model.sources }} / ${outlets.size}", colors, font) {
-                        open = if (group in open) open - group else open + group
+                    MenuRow(title, "${chosen.size} مصدر", colors, font) {
+                        open = if (scope in open) open - scope else open + scope
                     }
                 }
-                if (group in open) {
-                    items(outlets, key = { it.id }) { outlet ->
-                        Check(outlet.label, outlet.id in model.sources, colors, font) { model.setSource(outlet.id, it) }
+                if (scope in open) {
+                    items(Catalog.outlets, key = { "$scope-${it.id}" }) { outlet ->
+                        Check(outlet.label, outlet.id in chosen, colors, font) { model.setScopeSource(scope, outlet.id, it) }
                     }
                 }
             }
@@ -494,24 +494,25 @@ private fun playRefresh(context: Context) {
 
 @Composable
 private fun BottomBar(model: MawjizModel, colors: Paint, font: FontFamily) {
+    val items = listOf("" to "الكل") + Catalog.scopes
     Row(
         Modifier.fillMaxWidth().background(colors.sheet).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Catalog.scopes.forEach { (id, label) ->
-            val on = model.selected.isEmpty() || id in model.selected
+        items.forEach { (id, label) ->
+            val on = if (id.isEmpty()) model.selected.isEmpty() else model.selected == setOf(id)
             Text(
                 label,
                 color = if (on) colors.paper else colors.ink,
                 fontFamily = font,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(18.dp))
                     .background(if (on) colors.ink else colors.paper)
-                    .clickable { model.toggleScope(id) }
+                    .clickable { model.showScope(id) }
                     .padding(vertical = 12.dp),
             )
         }

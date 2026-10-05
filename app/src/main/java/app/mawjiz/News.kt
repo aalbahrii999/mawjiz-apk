@@ -80,6 +80,12 @@ object Catalog {
     )
     val defaultOrder = desks.map { it.id }
     val defaultSources = listOf("reuters", "bbc", "spa", "aljazeera", "alarabiya", "asharq", "france24", "dw")
+    fun defaultScopeSources() = mapOf(
+        "local" to listOf("spa", "okaz", "sabq", "aleqt", "alriyadh", "arabnews"),
+        "region" to listOf("aljazeera", "alarabiya", "asharq", "sky", "bbc"),
+        "world" to listOf("reuters", "bbc", "afp", "ap", "france24", "dw", "euronews"),
+    )
+    fun desksIn(scope: String) = groups.firstOrNull { scopeOf(it.ids.first()) == scope }?.ids ?: emptyList()
     fun desk(id: String) = desks.find { it.id == id }
     fun defaultEnabled() = desks.associate { it.id to (it.id != "sports" && it.id != "tech" && it.id != "fun") }
 }
@@ -262,9 +268,15 @@ fun scopeOf(id: String): String = when (id) {
     else -> "region"
 }
 
+fun primaryDesk(desks: List<String>): String? {
+    val place = desks.firstOrNull { it != "oil" && it != "politics" && it != "economy" }
+    return place ?: desks.firstOrNull()
+}
+
 fun storyInScope(story: Story, scopes: Set<String>): Boolean {
+    val desk = primaryDesk(story.desks) ?: return false
     if (scopes.isEmpty()) return true
-    return story.desks.any { scopeOf(it) in scopes }
+    return scopeOf(desk) in scopes
 }
 
 fun matchDesks(text: String, enabled: Map<String, Boolean>, outlet: String = ""): List<String> {
