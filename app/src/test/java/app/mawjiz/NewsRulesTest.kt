@@ -91,6 +91,30 @@ class NewsRulesTest {
     }
 
     @Test
+    fun leadSitsFirstAndInterestPullsSimilar() {
+        val now = 1_700_000_000_000L
+        val soft = Story("s", "أعلن البنك تثبيت الفائدة بعد اجتماع قصير في العاصمة اليوم", listOf("economy"), now - 60_000, emptyList())
+        val war = Story("w", "قصفت المقاتلات موقعاً في غزة وسقط قتلى في الغارات المتواصلة", listOf("gaza"), now - 3_600_000, emptyList())
+        val other = Story("g", "استهدفت غارة ثانية موقعاً في غزة وأصابت أضراراً واسعة اليوم", listOf("gaza"), now - 7_200_000, emptyList())
+        val rows = feedRows(listOf(soft, war, other), setOf("w"), now)
+        assertEquals("w", rows.first().story.id)
+        assertEquals("lead", rows.first().kind)
+        assertEquals("similar", rows[1].kind)
+        assertEquals("g", rows[1].story.id)
+        assertEquals(3, rows.size)
+    }
+
+    @Test
+    fun whyLineStaysShortAndImageUrlIsKept() {
+        val line = whyLine("أعلنت وزارة الصحة السعودية بدء حملة تطعيم في جدة اليوم", listOf("saudi"))
+        assertTrue(line.isNotBlank())
+        assertFalse(line.contains('؟'))
+        val block = """<item><media:content url="https://example.com/a.jpg" /></item>"""
+        assertEquals("https://example.com/a.jpg", rssImage(block))
+        assertEquals("", rssImage("""<img src="https://cdn.example/pixel.gif" />"""))
+    }
+
+    @Test
     fun warRanksAboveSoft() {
         val now = 1_700_000_000_000L
         val war = Story("a", "قصفت المقاتلات موقعاً في غزة وسقط قتلى في الغارات المتواصلة", listOf("gaza"), now - 3_600_000, emptyList())

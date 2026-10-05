@@ -11,7 +11,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-data class RawItem(val title: String, val url: String, val outlet: String, val body: String, val at: Long)
+data class RawItem(val title: String, val url: String, val outlet: String, val body: String, val at: Long, val image: String = "")
 
 class Net {
     private val http = OkHttpClient.Builder().callTimeout(20, TimeUnit.SECONDS).build()
@@ -45,6 +45,8 @@ class Net {
                         item.at,
                         listOf(Source(item.outlet, item.url)),
                         detailFor(item.title, item.body, item.outlet, classed.first),
+                        image = item.image,
+                        why = whyLine(classed.first, classed.second),
                     )
                     if (stories.none { sameStory(it, story) }) stories += story
                 }
@@ -81,7 +83,7 @@ class Net {
             val hinted = row.desks.filter { enabled[it] == true && Catalog.desk(it) != null }
             val desks = (hinted + matchDesks(text, enabled, outlet)).distinct().take(2)
             if (desks.isEmpty()) return@mapNotNull story
-            story.copy(text = text, desks = desks)
+            story.copy(text = text, desks = desks, why = whyLine(text, desks))
         }
     }
 
@@ -173,7 +175,7 @@ class Net {
             val outlet = arabicProse(tag(block, "source")).ifBlank { pair.second }.ifBlank { fallback }.take(42)
             val at = parseDate(tag(block, "pubDate").ifBlank { tag(block, "dc:date") })
             if (at > 0 && System.currentTimeMillis() - at > 48L * 60 * 60 * 1000) continue
-            items += RawItem(pair.first, link, outlet, arabicProse(tag(block, "description")).take(360), if (at > 0) at else System.currentTimeMillis())
+            items += RawItem(pair.first, link, outlet, arabicProse(tag(block, "description")).take(360), if (at > 0) at else System.currentTimeMillis(), rssImage(block))
             if (items.size == 14) break
         }
         return items

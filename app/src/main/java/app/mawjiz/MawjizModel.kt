@@ -37,6 +37,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     var reading by mutableStateOf<Story?>(null)
     var readingMore by mutableStateOf("")
     var readingBusy by mutableStateOf(false)
+    var interests by mutableStateOf(setOf<String>())
     var taste by mutableStateOf<Map<String, Int>>(emptyMap())
     var tasteDay by mutableStateOf("")
 
@@ -132,9 +133,17 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun interest(story: Story) {
-        val id = primaryDesk(story.desks) ?: return
-        val now = taste[id] ?: 0
-        taste = if (now > 0) taste - id else taste + (id to 4)
+        val desk = primaryDesk(story.desks)
+        if (story.id in interests) {
+            interests = interests - story.id
+            if (desk != null) {
+                val left = (taste[desk] ?: 0) - 4
+                taste = if (left <= 0) taste - desk else taste + (desk to left)
+            }
+        } else {
+            interests = interests + story.id
+            if (desk != null) taste = taste + (desk to ((taste[desk] ?: 0) + 4).coerceAtMost(12))
+        }
         save()
     }
 
@@ -267,6 +276,8 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                     links,
                     row.optString("detail"),
                     row.optBoolean("saved"),
+                    row.optString("image"),
+                    row.optString("why"),
                 )
             }
             stories = mergeStories(emptyList(), loaded, System.currentTimeMillis()).mapNotNull { retag(it, enabled) }
@@ -281,6 +292,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                 taste = map
             }
             tasteDay = json.optString("tasteDay")
+            interests = json.optJSONArray("interests").strings().toSet()
         } catch (_: Exception) {
             note = ""
         }
@@ -307,6 +319,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         taste.forEach { (id, count) -> tasteJson.put(id, count) }
         json.put("taste", tasteJson)
         json.put("tasteDay", tasteDay)
+        json.put("interests", JSONArray(interests.toList()))
         val items = JSONArray()
         stories.forEach { story ->
             val links = JSONArray()
@@ -319,6 +332,8 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
                     .put("saved", story.saved)
                     .put("desks", JSONArray(story.desks))
                     .put("at", story.at)
+                    .put("image", story.image)
+                    .put("why", story.why)
                     .put("sources", links),
             )
         }

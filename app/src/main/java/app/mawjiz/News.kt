@@ -14,6 +14,8 @@ data class Story(
     val sources: List<Source>,
     val detail: String = "",
     val saved: Boolean = false,
+    val image: String = "",
+    val why: String = "",
 )
 
 object Catalog {
@@ -339,6 +341,64 @@ fun detailFor(title: String, body: String, outlet: String, card: String): String
 private val heavyNews = listOf("قصف", "قتل", "حرب", "غاره", "صاروخ", "عقوبات", "اوبك", "نفط", "انفجار", "غزو", "احتل", "اغتيال", "اشتباك").map(::normalize)
 private val wireNames = listOf("رويترز", "بي بي سي", "واس", "الجزيرة", "فرانس برس", "أسوشيتد برس")
 
+fun whyLine(text: String, desks: List<String>): String {
+    val norm = normalize(text)
+    val desk = primaryDesk(desks) ?: return ""
+    return when {
+        norm.contains("هرمز") || norm.contains("المندب") || norm.contains("البحر الاحمر") -> "هذا ممر يمر منه النفط، وأثره يوصل."
+        desk == "oil" || norm.contains("اوبك") -> "هذا يمس سعر النفط، مو خبر بعيد."
+        desk == "saudi" -> "هذا داخل السعودية، قريب منك."
+        desk == "gulf" -> "هذا في الخليج، وجارك فيه."
+        desk in setOf("gaza", "yemen", "iran", "lebanon", "syria", "iraq", "redsea") -> "نزاع قريب، ومو خبر قارة ثانية."
+        desk == "health" -> "هذا عن الصحة، مو سياسة."
+        desk == "science" -> "خارج الزحمة، وفيه شيء جديد."
+        desk == "culture" -> "استراحة قصيرة من الخبر الجاف."
+        desk in setOf("america", "europe", "china", "russia") -> "قرارهم ممكن يرجّع أثره هنا."
+        else -> "في نطاقك، ويستاهل نظرة."
+    }
+}
+
+data class FeedRow(val story: Story, val kind: String)
+
+fun feedRows(visible: List<Story>, interests: Set<String>, now: Long): List<FeedRow> {
+    if (visible.isEmpty()) return emptyList()
+    val recent = visible.filter { now - it.at in 0..18L * 3_600_000 }
+    val pool = if (recent.isNotEmpty()) recent else visible
+    val lead = pool.maxByOrNull { rankScore(it, now, emptyMap()) }
+    val ordered = listOfNotNull(lead) + visible.filter { it.id != lead?.id }.sortedByDescending { it.at }
+    val rows = mutableListOf<FeedRow>()
+    val used = mutableSetOf<String>()
+    for (story in ordered) {
+        if (story.id in used) continue
+        rows += FeedRow(story, if (story.id == lead?.id) "lead" else "item")
+        used += story.id
+        if (story.id !in interests) continue
+        val desk = primaryDesk(story.desks)
+        val similar = ordered.firstOrNull { it.id !in used && it.id !in interests && primaryDesk(it.desks) == desk }
+        if (similar != null) {
+            used += similar.id
+            rows += FeedRow(similar, "similar")
+        }
+    }
+    return rows
+}
+
+fun rssImage(block: String): String {
+    val patterns = listOf(
+        Regex("""<media:content[^>]*url="([^"]+)"""", RegexOption.IGNORE_CASE),
+        Regex("""<media:thumbnail[^>]*url="([^"]+)"""", RegexOption.IGNORE_CASE),
+        Regex("""<enclosure[^>]*url="([^"]+)"[^>]*type="image""", RegexOption.IGNORE_CASE),
+        Regex("""<img[^>]*src="(https://[^"]+)"""", RegexOption.IGNORE_CASE),
+    )
+    for (pattern in patterns) {
+        val url = pattern.find(block)?.groupValues?.get(1).orEmpty()
+        if (!url.startsWith("https://") || url.length > 400) continue
+        val bad = url.contains("pixel") || url.contains("1x1") || url.contains("spacer") || url.contains("logo")
+        if (!bad) return url
+    }
+    return ""
+}
+
 fun rankScore(story: Story, now: Long, taste: Map<String, Int>): Int {
     val hours = ((now - story.at).coerceAtLeast(0L) / 3_600_000L).toInt()
     val fresh = (48 - hours).coerceIn(0, 48)
@@ -364,7 +424,7 @@ fun retag(story: Story, enabled: Map<String, Boolean>): Story? {
     if (!isNewsworthy(text)) return null
     val desks = matchDesks(text, enabled, outlet)
     if (desks.isEmpty()) return null
-    return story.copy(text = text, desks = desks)
+    return story.copy(text = text, desks = desks, why = whyLine(text, desks))
 }
 
 fun storyId(url: String): String {

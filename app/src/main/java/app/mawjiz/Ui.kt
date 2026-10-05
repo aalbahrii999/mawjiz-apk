@@ -62,6 +62,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import android.graphics.BitmapFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,6 +88,30 @@ private fun paint(theme: String) = if (theme == "light") {
 }
 
 private val Teal = Color(0xFF1B5E56)
+private val imageClient = OkHttpClient.Builder().callTimeout(12, TimeUnit.SECONDS).build()
+
+@Composable
+private fun RemoteImage(url: String, modifier: Modifier) {
+    if (!url.startsWith("https://")) return
+    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = withContext(Dispatchers.IO) {
+            try {
+                val response = imageClient.newCall(Request.Builder().url(url).build()).execute()
+                response.use {
+                    if (!it.isSuccessful) return@withContext null
+                    val bytes = it.body?.bytes() ?: return@withContext null
+                    if (bytes.size !in 1..1_500_000) return@withContext null
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+    val shown = bitmap ?: return
+    Image(shown.asImageBitmap(), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
+}
 private val CairoFont = FontFamily(Font(R.font.cairo))
 private val AmiriFont = FontFamily(Font(R.font.amiri))
 private val PlexFont = FontFamily(Font(R.font.plex))
@@ -151,9 +185,22 @@ private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, 
                 if (visible.isEmpty() && !model.loading) {
                     Text("لا مادة هنا.", color = colors.ink, fontFamily = font, modifier = Modifier.padding(24.dp))
                 } else {
+                    val rows = feedRows(visible, model.interests, System.currentTimeMillis())
                     LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                        items(visible, key = { it.id }) { story ->
-                            StoryRow(story, colors, font, body, (model.taste[primaryDesk(story.desks).orEmpty()] ?: 0) > 0, { model.openStory(story) }, { model.toggleSaved(story) }, { model.interest(story) }, { shareStory(context, model.shareText(story)) })
+                        items(rows, key = { it.kind + it.story.id }) { row ->
+                            StoryRow(
+                                row.story,
+                                colors,
+                                font,
+                                body,
+                                row.story.id in model.interests,
+                                { model.openStory(row.story) },
+                                { model.toggleSaved(row.story) },
+                                { model.interest(row.story) },
+                                { shareStory(context, model.shareText(row.story)) },
+                                large = row.kind == "lead",
+                                similar = row.kind == "similar",
+                            )
                             HorizontalDivider(color = colors.line)
                         }
                     }
@@ -246,6 +293,8 @@ private fun StoryRow(
     onSave: () -> Unit,
     onInterest: () -> Unit,
     onShare: () -> Unit,
+    large: Boolean = false,
+    similar: Boolean = false,
 ) {
     val stamp = remember(story.at) {
         val format = SimpleDateFormat("d MMM · h:mm a", Locale("ar"))
@@ -253,10 +302,29 @@ private fun StoryRow(
         format.format(Date(story.at))
     }
     val lead = Catalog.desk(story.desks.firstOrNull().orEmpty())
-    Column(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 12.dp)) {
+    val textSize = if (large) body * 1.15 else if (similar) body * 0.92 else body
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(if (similar) colors.sheet else colors.paper)
+            .clickable(onClick = onOpen)
+            .padding(start = if (similar) 28.dp else 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+    ) {
+        if (large) {
+            Text("الأهم الآن", color = Teal, fontFamily = font, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+        }
+        if (similar) {
+            Text("مشابه", color = colors.muted, fontFamily = font, fontSize = 12.sp)
+            Spacer(Modifier.height(6.dp))
+        }
+        if (large && story.image.startsWith("https://")) {
+            RemoteImage(story.image, Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)))
+            Spacer(Modifier.height(10.dp))
+        }
         Row {
             Box(
-                Modifier.size(42.dp).clip(CircleShape).background(Color((lead?.color ?: 0xFF1B5E56).toInt())),
+                Modifier.size(if (large) 46.dp else 42.dp).clip(CircleShape).background(Color((lead?.color ?: 0xFF1B5E56).toInt())),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(lead?.label?.take(1) ?: "م", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = font)
@@ -272,14 +340,37 @@ private fun StoryRow(
                     Text(stamp, color = colors.muted, fontSize = 12.sp, fontFamily = font)
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(story.text, color = colors.ink, fontSize = body, lineHeight = body * 1.45, fontFamily = font)
+                if (!large && story.image.startsWith("https://")) {
+                    Row {
+                        Text(story.text, color = colors.ink, fontSize = textSize, lineHeight = textSize * 1.45, fontFamily = font, modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(10.dp))
+                        RemoteImage(story.image, Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)))
+                    }
+                } else {
+                    Text(story.text, color = colors.ink, fontSize = textSize, lineHeight = textSize * 1.45, fontFamily = font)
+                }
+                if (story.why.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(story.why, color = Teal, fontSize = 13.sp, fontFamily = font)
+                }
                 story.sources.firstOrNull { it.outlet.isNotBlank() }?.let { source ->
                     Spacer(Modifier.height(6.dp))
                     Text(source.outlet, color = colors.muted, fontSize = 12.sp, fontFamily = font)
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(if (interested) "مهتم" else "اهتمام", color = if (interested) colors.ink else colors.muted, fontSize = 13.sp, fontWeight = if (interested) FontWeight.Bold else FontWeight.Normal, fontFamily = font, modifier = Modifier.clickable(onClick = onInterest))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (interested) "مهتم" else "اهتمام",
+                        color = if (interested) Color.White else colors.muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = font,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (interested) Teal else Color.Transparent)
+                            .clickable(onClick = onInterest)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
                     Text(if (story.saved) "محفوظ" else "حفظ", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onSave))
                     Text("مشاركة", color = colors.ink, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onShare))
                     Text("توسيع", color = colors.muted, fontSize = 13.sp, fontFamily = font, modifier = Modifier.clickable(onClick = onOpen))
@@ -558,6 +649,10 @@ private fun ReaderScreen(model: MawjizModel, colors: Paint, font: FontFamily, bo
     val shown = model.readingMore.ifBlank { story.detail.ifBlank { story.text } }
     Column(Modifier.fillMaxSize().background(colors.paper).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = { model.closeStory() }) { Text("رجوع", color = colors.muted, fontFamily = font) }
+        if (story.image.startsWith("https://")) {
+            RemoteImage(story.image, Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)))
+            Spacer(Modifier.height(12.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             story.desks.take(2).forEach { id ->
                 val desk = Catalog.desk(id) ?: return@forEach
@@ -566,6 +661,10 @@ private fun ReaderScreen(model: MawjizModel, colors: Paint, font: FontFamily, bo
         }
         Spacer(Modifier.height(12.dp))
         Text(shown, color = colors.ink, fontSize = body, lineHeight = body * 1.55, fontFamily = font)
+        if (story.why.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(story.why, color = Teal, fontSize = 14.sp, fontFamily = font)
+        }
         if (model.readingBusy) {
             Spacer(Modifier.height(12.dp))
             Text("يجلب بقية النص…", color = colors.muted, fontSize = 13.sp, fontFamily = font)
