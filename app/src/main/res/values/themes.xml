@@ -3,5 +3,7 @@
         <item name="android:statusBarColor">#10141B</item>
         <item name="android:navigationBarColor">#10141B</item>
         <item name="android:windowBackground">#10141B</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:fitsSystemWindows">true</item>
     </style>
 </resources>

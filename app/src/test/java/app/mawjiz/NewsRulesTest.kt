@@ -57,6 +57,16 @@ class NewsRulesTest {
     }
 
     @Test
+    fun actorImpliesDeskWithoutCountryName() {
+        val fund = classify("أعلن صندوق الاستثمارات شراء حصة جديدة بعد اجتماع مجلس الإدارة اليوم", "", "رويترز", enabled)
+        assertEquals("saudi", fund?.second?.first())
+        val whiteHouse = classify("فرض البيت الأبيض عقوبات جديدة على شركات الطاقة بعد قرار الكونغرس اليوم", "", "رويترز", enabled)
+        assertTrue(whiteHouse!!.second.contains("america"))
+        val houthis = classify("استهدف الحوثيون سفينة قرب باب المندب بصاروخ وأصابها أضرار", "", "رويترز", enabled)
+        assertTrue(houthis!!.second.contains("yemen"))
+    }
+
+    @Test
     fun warRanksAboveSoft() {
         val now = 1_700_000_000_000L
         val war = Story("a", "قصفت المقاتلات موقعاً في غزة وسقط قتلى في الغارات المتواصلة", listOf("gaza"), now - 3_600_000, emptyList())

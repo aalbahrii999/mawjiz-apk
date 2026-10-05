@@ -127,10 +127,12 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
         page = id
     }
 
-    fun toggleFilter(id: String) {
-        val on = id !in selected
-        selected = if (on) selected + id else selected - id
-        if (on) taste = taste + (id to ((taste[id] ?: 0) + 1).coerceAtMost(20))
+    fun toggleScope(id: String) {
+        val current = if (selected.isEmpty()) setOf("local", "region", "world") else selected
+        val next = if (id in current) current - id else current + id
+        selected = if (next.isEmpty() || next.size == 3) emptySet() else next
+        tab = "feed"
+        page = ""
         save()
     }
 
@@ -218,7 +220,7 @@ class MawjizModel(app: Application) : AndroidViewModel(app) {
             val storedOrder = json.optJSONArray("order").strings().filter { Catalog.desk(it) != null }
             if (storedOrder.isNotEmpty()) order = (storedOrder + Catalog.defaultOrder).distinct()
             sources = json.optJSONArray("sources").strings().ifEmpty { sources }
-            selected = json.optJSONArray("selected").strings().filter { enabled[it] == true }.toSet()
+            selected = json.optJSONArray("selected").strings().filter { it in setOf("local", "region", "world") }.toSet()
             val loaded = mutableListOf<Story>()
             val items = json.optJSONArray("stories") ?: JSONArray()
             for (i in 0 until items.length()) {

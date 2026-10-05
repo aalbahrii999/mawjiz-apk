@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -122,10 +124,8 @@ fun MawjizApp(model: MawjizModel = viewModel()) {
 private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: android.content.Context) {
     val now = System.currentTimeMillis()
     val visible = model.stories.filter { story ->
-        story.desks.any { model.enabled[it] == true } &&
-            (model.selected.isEmpty() || story.desks.any { it in model.selected })
+        story.desks.any { model.enabled[it] == true } && storyInScope(story, model.selected)
     }.sortedWith(compareByDescending<Story> { rankScore(it, now, model.taste) }.thenByDescending { it.at })
-    val chips = model.order.mapNotNull { id -> Catalog.desk(id)?.takeIf { model.enabled[id] == true } }
     Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -133,8 +133,11 @@ private fun TimelineScreen(model: MawjizModel, colors: Paint, font: FontFamily, 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("موجز", color = colors.ink, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = font)
+                Row {
+                    TextButton(onClick = { model.showSaved() }) { Text("محفوظ", color = colors.muted, fontFamily = font) }
+                    TextButton(onClick = { model.openSettings() }) { Text("الإعدادات", color = colors.muted, fontFamily = font) }
+                }
             }
-            ChipRow(chips, model.selected, colors, font, model::toggleFilter, model::showAll, model::moveDesk)
             if (model.note.isNotBlank()) {
                 Text(model.note, color = colors.muted, fontSize = 13.sp, fontFamily = font, modifier = Modifier.padding(horizontal = 16.dp))
             }
@@ -491,10 +494,27 @@ private fun playRefresh(context: Context) {
 
 @Composable
 private fun BottomBar(model: MawjizModel, colors: Paint, font: FontFamily) {
-    Row(Modifier.fillMaxWidth().background(colors.sheet).padding(vertical = 8.dp)) {
-        BarItem("الموجز", model.tab == "feed", colors, font, Modifier.weight(1f)) { model.showFeed() }
-        BarItem("محفوظ", model.tab == "saved", colors, font, Modifier.weight(1f)) { model.showSaved() }
-        BarItem("الإعدادات", model.tab == "settings", colors, font, Modifier.weight(1f)) { model.openSettings() }
+    Row(
+        Modifier.fillMaxWidth().background(colors.sheet).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Catalog.scopes.forEach { (id, label) ->
+            val on = model.selected.isEmpty() || id in model.selected
+            Text(
+                label,
+                color = if (on) colors.paper else colors.ink,
+                fontFamily = font,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if (on) colors.ink else colors.paper)
+                    .clickable { model.toggleScope(id) }
+                    .padding(vertical = 12.dp),
+            )
+        }
     }
 }
 
@@ -533,7 +553,7 @@ private fun SavedScreen(model: MawjizModel, colors: Paint, font: FontFamily, bod
 private fun ReaderScreen(model: MawjizModel, colors: Paint, font: FontFamily, body: TextUnit, context: Context) {
     val story = model.reading ?: return
     val shown = model.readingMore.ifBlank { story.detail.ifBlank { story.text } }
-    Column(Modifier.fillMaxSize().background(colors.paper).verticalScroll(rememberScrollState()).padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(colors.paper).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
         TextButton(onClick = { model.closeStory() }) { Text("رجوع", color = colors.muted, fontFamily = font) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             story.desks.take(2).forEach { id ->

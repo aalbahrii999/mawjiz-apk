@@ -18,31 +18,32 @@ data class Story(
 
 object Catalog {
     val desks = listOf(
-        Desk("gaza", "غزة", 0xFFE15B64, listOf("غزه", "حماس")),
-        Desk("yemen", "اليمن", 0xFFD98A3A, listOf("يمن", "حوث", "صنعاء")),
-        Desk("iran", "إيران", 0xFFC46B4A, listOf("ايران", "هرمز", "طهران")),
-        Desk("lebanon", "لبنان", 0xFF6FA8A0, listOf("لبنان", "حزب الله")),
-        Desk("syria", "سوريا", 0xFFC4A15A, listOf("سوريا", "دمشق")),
-        Desk("iraq", "العراق", 0xFF8C7E6A, listOf("العراق", "بغداد")),
-        Desk("redsea", "البحر الأحمر", 0xFF3E8E9A, listOf("البحر الاحمر", "باب المندب", "المندب")),
-        Desk("saudi", "السعودية", 0xFF3E9A62, listOf("السعود", "ارامكو", "جده", "مكه", "المملكه")),
-        Desk("gulf", "الخليج", 0xFF4C8D7A, listOf("خليج", "الامارات", "قطر", "الكويت", "البحرين", "عمان")),
-        Desk("oil", "النفط", 0xFFC9842A, listOf("نفط", "اوبك", "برميل", "غاز")),
+        Desk("gaza", "غزة", 0xFFE15B64, listOf("غزة", "حماس", "خان يونس", "رفح", "جباليا", "الجهاد الإسلامي")),
+        Desk("yemen", "اليمن", 0xFFD98A3A, listOf("يمن", "حوث", "صنعاء", "أنصار الله", "مأرب", "الحديدة")),
+        Desk("iran", "إيران", 0xFFC46B4A, listOf("إيران", "هرمز", "طهران", "الحرس الثوري", "خامنئي", "نطنز", "فوردو")),
+        Desk("lebanon", "لبنان", 0xFF6FA8A0, listOf("لبنان", "حزب الله", "بيروت", "الضاحية")),
+        Desk("syria", "سوريا", 0xFFC4A15A, listOf("سوريا", "دمشق", "إدلب", "حلب")),
+        Desk("iraq", "العراق", 0xFF8C7E6A, listOf("العراق", "بغداد", "نينوى", "الموصل", "أربيل")),
+        Desk("redsea", "البحر الأحمر", 0xFF3E8E9A, listOf("البحر الأحمر", "باب المندب", "المندب")),
+        Desk("saudi", "السعودية", 0xFF3E9A62, listOf("السعود", "أرامكو", "جدة", "مكة", "المملكة", "صندوق الاستثمارات", "نيوم", "ولي العهد", "الحرمين")),
+        Desk("gulf", "الخليج", 0xFF4C8D7A, listOf("خليج", "الإمارات", "أبوظبي", "دبي", "قطر", "الدوحة", "الكويت", "البحرين", "عمان", "مسقط")),
+        Desk("oil", "النفط", 0xFFC9842A, listOf("نفط", "أوبك", "برميل", "غاز")),
         Desk("politics", "سياسة", 0xFF8E9AA8, emptyList()),
         Desk("economy", "اقتصاد", 0xFFB08A4A, emptyList()),
-        Desk("europe", "أوروبا", 0xFF6E8CC4, listOf("اوروبا", "اوروبي", "الاتحاد الاوروبي", "اوكرانيا", "فرنسا", "المانيا", "بريطانيا", "لندن", "باريس")),
-        Desk("america", "أمريكا", 0xFF5B7FD6, listOf("امريكا", "امريكي", "الولايات المتحده", "واشنطن")),
-        Desk("china", "الصين", 0xFFC45B5B, listOf("الصين", "صيني", "بكين")),
-        Desk("russia", "روسيا", 0xFF8A6BB5, listOf("روسيا", "روسي", "موسكو", "بوتين")),
+        Desk("europe", "أوروبا", 0xFF6E8CC4, listOf("أوروبا", "أوروبي", "الاتحاد الأوروبي", "أوكرانيا", "زيلينسكي", "كييف", "فرنسا", "ماكرون", "ألمانيا", "بريطانيا", "لندن", "باريس", "الناتو")),
+        Desk("america", "أمريكا", 0xFF5B7FD6, listOf("أمريكا", "أمريكي", "الولايات المتحدة", "واشنطن", "البيت الأبيض", "البنتاغون", "الكونغرس", "ترامب")),
+        Desk("china", "الصين", 0xFFC45B5B, listOf("الصين", "صيني", "بكين", "تايوان")),
+        Desk("russia", "روسيا", 0xFF8A6BB5, listOf("روسيا", "روسي", "موسكو", "بوتين", "الكرملين")),
         Desk("sports", "رياضة", 0xFF4F9D6E, emptyList()),
         Desk("tech", "تقنية", 0xFF5C8FBF, emptyList()),
         Desk("fun", "ترفيه", 0xFFB56B8A, emptyList()),
     )
     val groups = listOf(
-        DeskGroup("التصنيفات", listOf("gaza", "yemen", "iran", "lebanon", "syria", "iraq", "redsea", "saudi", "gulf", "oil", "politics", "economy")),
-        DeskGroup("أخبار عالمية", listOf("europe", "america", "china", "russia")),
-        DeskGroup("غيرها", listOf("sports", "tech", "fun")),
+        DeskGroup("محلي", listOf("saudi", "oil")),
+        DeskGroup("إقليمي", listOf("gaza", "yemen", "iran", "lebanon", "syria", "iraq", "redsea", "gulf")),
+        DeskGroup("عالمي", listOf("europe", "america", "china", "russia", "politics", "economy", "sports", "tech", "fun")),
     )
+    val scopes = listOf("local" to "محلي", "region" to "إقليمي", "world" to "عالمي")
     val queries = mapOf(
         "gaza" to "غزة", "yemen" to "اليمن الحوثي", "iran" to "إيران", "lebanon" to "لبنان",
         "syria" to "سوريا", "iraq" to "العراق", "redsea" to "البحر الأحمر", "saudi" to "السعودية",
@@ -255,6 +256,17 @@ fun isNewsworthy(input: String): Boolean {
     return words.size >= 6
 }
 
+fun scopeOf(id: String): String = when (id) {
+    "saudi", "oil" -> "local"
+    "europe", "america", "china", "russia", "politics", "economy", "sports", "tech", "fun" -> "world"
+    else -> "region"
+}
+
+fun storyInScope(story: Story, scopes: Set<String>): Boolean {
+    if (scopes.isEmpty()) return true
+    return story.desks.any { scopeOf(it) in scopes }
+}
+
 fun matchDesks(text: String, enabled: Map<String, Boolean>, outlet: String = ""): List<String> {
     val norm = normalize(stripMasthead(text, outlet))
     for ((id, words) in softTopics) {
@@ -265,7 +277,7 @@ fun matchDesks(text: String, enabled: Map<String, Boolean>, outlet: String = "")
     val hits = mutableListOf<Pair<Int, String>>()
     var blocked = false
     for (desk in Catalog.desks) {
-        val index = desk.words.map { norm.indexOf(it) }.filter { it >= 0 }.minOrNull() ?: continue
+        val index = desk.words.map { norm.indexOf(normalize(it)) }.filter { it >= 0 }.minOrNull() ?: continue
         if (enabled[desk.id] == true) hits += index to desk.id else blocked = true
     }
     if (riyadhIsCity(norm)) {

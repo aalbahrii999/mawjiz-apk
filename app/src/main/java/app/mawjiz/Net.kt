@@ -63,23 +63,25 @@ class Net {
         batch.forEach { payload.put(JSONObject().put("id", it.id).put("text", it.text.take(700))) }
         val prompt = listOf(
             "أنت محرر. اختصر كل خبر في جملتين: من فعل، ماذا حدث، وأين.",
-            "لا تغيّر البلد، ولا تضف بلدًا لم يرد في النص، ولا تعامل اسم الجريدة كأنه مدينة.",
-            "لا تخترع رقمًا. لا تكتب اسم الوكالة داخل الخبر. لا رموز ولا أكواد.",
+            "لا تخترع رقمًا ولا بلدًا لم يدل عليه الخبر. لا تكتب اسم الوكالة داخل النص.",
+            "صنّف بالمعنى لا بذكر اسم الدولة. البيت الأبيض أمريكا، الحرس الثوري إيران، صندوق الاستثمارات السعودية، الحوثيون اليمن، حماس غزة، الكرملين روسيا.",
+            "المفاتيح المسموحة فقط: gaza yemen iran lebanon syria iraq redsea saudi gulf oil politics economy europe america china russia sports tech fun",
             "سؤال أو رأي أو جولة صحف أو خبر بلا فاعل وفعل ونتيجة: keep=false.",
-            "أعد JSON فقط: {\"items\":[{\"id\":\"\",\"text\":\"\",\"keep\":true}]}",
+            "أعد JSON فقط: {\"items\":[{\"id\":\"\",\"text\":\"\",\"keep\":true,\"desks\":[\"iran\"]}]}",
             payload.toString(),
         ).joinToString("\n")
         val raw = call(key, model, prompt) ?: fallbacks.firstNotNullOfOrNull { call(key, it, prompt) } ?: return items
         val rows = parseRows(raw) ?: return items
-        val byId = rows.associateBy { it.first }
+        val byId = rows.associateBy { it.id }
         return items.mapNotNull { story ->
             val row = byId[story.id] ?: return@mapNotNull story
-            if (!row.second) return@mapNotNull null
+            if (!row.keep) return@mapNotNull null
             val outlet = story.sources.firstOrNull()?.outlet.orEmpty()
-            val text = stripMasthead(arabicProse(row.third), outlet)
+            val text = stripMasthead(arabicProse(row.text), outlet)
             if (!isNewsworthy(text)) return@mapNotNull story
-            val desks = matchDesks(text, enabled, outlet)
-            if (desks.isEmpty() || story.desks.none { it in desks }) return@mapNotNull story
+            val hinted = row.desks.filter { enabled[it] == true && Catalog.desk(it) != null }
+            val desks = (hinted + matchDesks(text, enabled, outlet)).distinct().take(2)
+            if (desks.isEmpty()) return@mapNotNull story
             story.copy(text = text, desks = desks)
         }
     }
@@ -136,15 +138,19 @@ class Net {
         return text.ifBlank { null }
     }
 
-    private fun parseRows(raw: String): List<Triple<String, Boolean, String>>? {
+    private data class Row(val id: String, val keep: Boolean, val text: String, val desks: List<String>)
+
+    private fun parseRows(raw: String): List<Row>? {
         val start = raw.indexOf('{')
         val end = raw.lastIndexOf('}')
         if (start < 0 || end <= start) return null
         val items = JSONObject(raw.substring(start, end + 1)).optJSONArray("items") ?: return null
         return List(items.length()) { index ->
-            val row = items.optJSONObject(index) ?: return@List Triple("", false, "")
-            Triple(row.optString("id"), row.optBoolean("keep", true), row.optString("text"))
-        }.filter { it.first.isNotBlank() }
+            val row = items.optJSONObject(index) ?: return@List Row("", false, "", emptyList())
+            val desks = row.optJSONArray("desks")
+            val ids = if (desks == null) emptyList() else List(desks.length()) { desks.optString(it) }.filter { it.isNotBlank() }
+            Row(row.optString("id"), row.optBoolean("keep", true), row.optString("text"), ids)
+        }.filter { it.id.isNotBlank() }
     }
 
     private fun get(url: String): String? {

@@ -1,7 +1,7 @@
 # موجز
 
-**الإصدار 5.2.0** — رمز الإصدار 8
+**الإصدار 5.3.0** — رمز الإصدار 9
 
-[تحميل Mawjiz-5.2.0.apk](https://github.com/aalbahrii999/mawjiz-apk/releases/download/v5.2.0/Mawjiz-5.2.0.apk)
+[تحميل Mawjiz-5.3.0.apk](https://github.com/aalbahrii999/mawjiz-apk/releases/download/v5.3.0/Mawjiz-5.3.0.apk)
 
-تطبيق أندرويد أصلي. المهم يظهر أولًا. التفضيل يُحفظ على الجهاز. الخبر يُقرأ ويُشارَك من داخل التطبيق.
+الشريط السفلي: محلي وإقليمي وعالمي، فوق أزرار النظام.
